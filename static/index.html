@@ -20,18 +20,6 @@
                     <li><a href="#" onclick="showSection('statistics')">Thống kê</a></li>
                 </ul>
             </nav>
-            <div class="auth-bar">
-                <div id="authUserInfo" class="auth-user-info" style="display:none">
-                    <i class="fas fa-user-circle"></i>
-                    <span id="authUsername">User</span>
-                    <span class="role-badge" id="authRole">user</span>
-                    <button class="btn btn-secondary" onclick="logout()">Đăng xuất</button>
-                </div>
-                <div id="authActions" class="auth-actions">
-                    <button class="btn" onclick="openModal('loginModal')"><i class="fas fa-sign-in-alt"></i> Đăng nhập</button>
-                    <button class="btn btn-outline" onclick="openModal('registerModal')"><i class="fas fa-user-plus"></i> Đăng ký</button>
-                </div>
-            </div>
         </header>
 
         <main>
@@ -212,57 +200,6 @@
     </div>
 
     <!-- Modals -->
-    <!-- Login Modal -->
-    <div id="loginModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Đăng nhập</h3>
-                <span class="close" onclick="closeModal('loginModal')">&times;</span>
-            </div>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="loginUsername">Tên đăng nhập</label>
-                    <input type="text" id="loginUsername" name="username" required>
-                </div>
-                <div class="form-group">
-                    <label for="loginPassword">Mật khẩu</label>
-                    <input type="password" id="loginPassword" name="password" required>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('loginModal')">Hủy</button>
-                    <button type="submit" class="btn btn-primary">Đăng nhập</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Register Modal -->
-    <div id="registerModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Đăng ký</h3>
-                <span class="close" onclick="closeModal('registerModal')">&times;</span>
-            </div>
-            <form id="registerForm">
-                <div class="form-group">
-                    <label for="registerUsername">Tên đăng nhập</label>
-                    <input type="text" id="registerUsername" name="username" required>
-                </div>
-                <div class="form-group">
-                    <label for="registerPassword">Mật khẩu</label>
-                    <input type="password" id="registerPassword" name="password" required>
-                </div>
-                <div class="form-group">
-                    <label for="registerFullName">Họ và tên (tuỳ chọn)</label>
-                    <input type="text" id="registerFullName" name="full_name">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('registerModal')">Hủy</button>
-                    <button type="submit" class="btn btn-primary">Đăng ký</button>
-                </div>
-            </form>
-        </div>
-    </div>
     <!-- Household Modal -->
     <div id="householdModal" class="modal">
         <div class="modal-content">
