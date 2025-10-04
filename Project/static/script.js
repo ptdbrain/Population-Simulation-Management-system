@@ -1,15 +1,13 @@
 // Global variables
 let currentSection = 'households';
 let editingId = null;
+let authToken = null;
+let currentUser = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    loadHouseholds();
-    loadPersons();
-    loadAbsences();
-    loadResidences();
-    loadFeedbacks();
-    loadStatistics();
+    initAuth();
+    refreshDataByRole();
     
     // Set today's date as default for date inputs
     const today = new Date().toISOString().split('T')[0];
@@ -18,7 +16,127 @@ document.addEventListener('DOMContentLoaded', function() {
             input.value = today;
         }
     });
+    bindAuthForms();
 });
+
+function initAuth() {
+    authToken = localStorage.getItem('token');
+    if (authToken) {
+        fetch('/api/me', { headers: { 'Authorization': `Bearer ${authToken}` } })
+            .then(r => r.ok ? r.json() : null)
+            .then(user => {
+                if (user) {
+                    currentUser = user;
+                    updateAuthUI(true);
+                } else {
+                    updateAuthUI(false);
+                }
+            })
+            .catch(() => updateAuthUI(false));
+    } else {
+        updateAuthUI(false);
+    }
+}
+
+function updateAuthUI(isLoggedIn) {
+    const info = document.getElementById('authUserInfo');
+    const actions = document.getElementById('authActions');
+    if (!info || !actions) return;
+    if (isLoggedIn && currentUser) {
+        info.style.display = '';
+        actions.style.display = 'none';
+        document.getElementById('authUsername').textContent = currentUser.username;
+        document.getElementById('authRole').textContent = currentUser.role;
+    } else {
+        info.style.display = 'none';
+        actions.style.display = '';
+    }
+}
+
+function bindAuthForms() {
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', login);
+    }
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', register);
+    }
+}
+
+async function login(e) {
+    e.preventDefault();
+    const form = e.target;
+    const username = form.username.value.trim();
+    const password = form.password.value;
+    try {
+        const params = new URLSearchParams();
+        params.append('username', username);
+        params.append('password', password);
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params
+        });
+        if (!res.ok) throw new Error('Login failed');
+        const data = await res.json();
+        authToken = data.access_token;
+        localStorage.setItem('token', authToken);
+        const meRes = await fetch('/api/me', { headers: { 'Authorization': `Bearer ${authToken}` } });
+        currentUser = await meRes.json();
+        updateAuthUI(true);
+        closeModal('loginModal');
+        showMessage('Đăng nhập thành công', 'success');
+        refreshDataByRole();
+    } catch (err) {
+        showMessage('Đăng nhập thất bại', 'error');
+    }
+}
+
+async function register(e) {
+    e.preventDefault();
+    const form = e.target;
+    const payload = {
+        username: form.username.value.trim(),
+        password: form.password.value,
+        full_name: form.full_name.value.trim() || null
+    };
+    try {
+        const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('Register failed');
+        showMessage('Đăng ký thành công, vui lòng đăng nhập', 'success');
+        closeModal('registerModal');
+        openModal('loginModal');
+    } catch (err) {
+        showMessage('Đăng ký thất bại', 'error');
+    }
+}
+
+function logout() {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('token');
+    updateAuthUI(false);
+    showMessage('Đã đăng xuất', 'success');
+}
+
+function authHeaders(extra = {}) {
+    return authToken ? { 'Authorization': `Bearer ${authToken}`, ...extra } : { ...extra };
+}
+
+function refreshDataByRole() {
+    // For all users, attempt to load self-service and admin views; protected calls will error if not authorized
+    loadHouseholds();
+    loadPersons();
+    loadAbsences();
+    loadResidences();
+    loadFeedbacks();
+    loadStatistics();
+}
 
 // Navigation functions
 function showSection(sectionId) {
@@ -95,7 +213,7 @@ async function apiCall(url, options = {}) {
         const response = await fetch(url, {
             headers: {
                 'Content-Type': 'application/json',
-                ...options.headers
+                ...authHeaders(options.headers || {})
             },
             ...options
         });
