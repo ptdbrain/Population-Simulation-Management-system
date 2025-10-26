@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Đăng nhập hệ thống</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #eaf0f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+  .login-container {
+    width: 350px; /* hoặc size bạn muốn */
+    margin: auto;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.login-container input {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    box-sizing: border-box; /* Giúp input không vượt quá container */
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+
+        h2 {
+            text-align: center;
+            margin-bottom: 22px;
+            color: #333;
+        }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            margin: 8px 0 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #2c7be5;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1a5fc3;
+        }
+        .error {
+            color: red;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .success {
+            color: green;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-container">
+    <h2 id="form-title">Đăng nhập</h2>
+
+    <div id="message"></div>
+
+    <input type="text" id="username" placeholder="Tên đăng nhập" required>
+    <input type="password" id="password" placeholder="Mật khẩu" required>
+
+    <button id="actionBtn" onclick="handleAction()">Đăng nhập</button>
+
+    <div style="margin-top: 15px; font-size: 14px;">
+        <span id="switchText">Chưa có tài khoản?</span>
+        <span id="switchAction" style="color: #2c7be5; cursor: pointer;">
+            Đăng ký ngay
+        </span>
+    </div>
+</div>
+
+
+
+<script>
+    let isRegisterMode = false;
+
+    function switchMode() {
+        const title = document.getElementById("form-title");
+        const actionBtn = document.getElementById("actionBtn");
+        const switchText = document.getElementById("switchText");
+        const switchAction = document.getElementById("switchAction");
+        const messageBox = document.getElementById("message");
+
+        messageBox.innerHTML = ""; // Xóa thông báo cũ
+
+        isRegisterMode = !isRegisterMode;
+
+        if (isRegisterMode) {
+            title.textContent = "Đăng ký";
+            actionBtn.textContent = "Đăng ký";
+            switchText.textContent = "Đã có tài khoản?";
+            switchAction.textContent = "Đăng nhập";
+        } else {
+            title.textContent = "Đăng nhập";
+            actionBtn.textContent = "Đăng nhập";
+            switchText.textContent = "Chưa có tài khoản?";
+            switchAction.textContent = "Đăng ký ngay";
+        }
+    }
+
+    document.getElementById("switchAction").addEventListener("click", switchMode);
+
+    async function handleAction() {
+        const user_name = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const messageBox = document.getElementById("message");
+
+        messageBox.innerHTML = "";
+
+        const apiUrl = isRegisterMode
+            ? "http://localhost:8000/register"
+            : "http://localhost:8000/login";
+
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_name, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            messageBox.innerHTML = `<p class='error'>${data.detail}</p>`;
+            return;
+        }
+
+        if (!isRegisterMode) {
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("user", JSON.stringify(data.user));
+            messageBox.innerHTML = "<p class='success'>Đăng nhập thành công! Đang chuyển hướng...</p>";
+            setTimeout(() => window.location.href = "/", 1000);
+        } else {
+            messageBox.innerHTML = "<p class='success'>Đăng ký thành công! Mời bạn đăng nhập.</p>";
+            switchMode();
+        }
+    }
+</script>
+
+</body>
+</html>

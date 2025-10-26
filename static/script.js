@@ -4,6 +4,24 @@ let editingId = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+      const token = localStorage.getItem("token");
+    const currentPage = window.location.pathname.split("/").pop();
+
+
+    if (!token) {
+        // ✅ Nếu chưa có token mà đang ở index → chuyển về login
+        if (currentPage !== "login.html") {
+            window.location.href = "static/login.html";
+        }
+        return;
+    }
+
+    // ✅ Nếu đã có token nhưng đang ở login → chuyển về index
+    if (currentPage === "static/login.html") {
+        window.location.href = "index.html";
+        return;
+    }
+
     loadHouseholds();
     loadPersons();
     loadAbsences();
@@ -18,6 +36,17 @@ document.addEventListener('DOMContentLoaded', function() {
             input.value = today;
         }
     });
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+    const logoutBtn = document.getElementById("logoutBtn");
+
+    if (logoutBtn) {
+        logoutBtn.addEventListener("click", function () {
+            localStorage.removeItem("token"); // Xoá token
+            window.location.href = "static/login.html"; // Quay về trang đăng nhập
+        });
+    }
 });
 
 // Navigation functions
@@ -91,26 +120,45 @@ window.onclick = function(event) {
 
 // API functions
 async function apiCall(url, options = {}) {
+    const token = localStorage.getItem("token");
+
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+
+    // ✅ Nếu có token → tự động gắn vào header
+    if (token) {
+        headers['Authorization'] = "Bearer " + token;
+    }
+
     try {
         const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
-            ...options
+            ...options,
+            headers: headers
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+
+        // ✅ Nếu token hết hạn → quay về trang login
+        if (response.status === 401) {
+            localStorage.removeItem("token");
+            window.location.href = "login.html";
+            return;
         }
-        
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
         return await response.json();
+
     } catch (error) {
-        console.error('API call failed:', error);
-        showMessage('Có lỗi xảy ra khi kết nối với server', 'error');
+        console.error("API call failed:", error);
+        showMessage(error.message, 'error');
         throw error;
     }
 }
+
 
 // Household functions
 async function loadHouseholds() {

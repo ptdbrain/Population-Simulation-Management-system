@@ -10,7 +10,21 @@
 <body>
     <div class="container">
         <header>
+            <div style="display: flex; justify-content: space-between; align-content: center">
             <h1><i class="fas fa-home"></i> Hệ thống quản lý hộ khẩu và nhân khẩu</h1>
+            <button onclick="showSection('logoutBtn')" id="logoutBtn" style="
+                background: linear-gradient(135deg, #e81d7e 30%, #ae06dd 180%);
+                color: white;
+                height: 30px;
+                border: none;
+                font-size: 12px;
+                padding: 5px 10px;
+                border-radius: 6px;
+                cursor: pointer;
+            ">
+                Đăng xuất
+            </button>  </div>
+
             <nav>
                 <ul>
                     <li><a href="#" onclick="showSection('households')" class="active">Quản lý hộ khẩu</a></li>
