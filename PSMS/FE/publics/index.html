@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Hộ khẩu</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tải icon (ionicons) -->
+    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+    <style>
+        /* Sử dụng font Inter */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Tùy chỉnh thanh cuộn */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* gray-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* gray-400 */
+        }
+        /* Lớp active cho sidebar */
+        .sidebar-link {
+            pointer-events: auto;
+        }
+        .sidebar-link.active {
+            pointer-events: none;
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="flex h-screen">
+        <!-- Sidebar (Menu bên trái) -->
+        <aside class="w-64 bg-white shadow-md flex flex-col fixed h-full z-10">
+            <!-- Thông tin User (cập nhật động) -->
+            <div class="flex items-center justify-center p-4 border-b">
+                <img src="https://placehold.co/40x40/3b82f6/white?text=A" alt="Admin Avatar" class="rounded-full w-10 h-10 mr-3">
+                <div>
+                    <span id="user-name" class="font-semibold text-gray-800">Loading...</span>
+                    <span id="user-email" class="text-xs text-gray-500 block">...</span>
+                </div>
+            </div>
+
+            <!-- Danh sách Navigation (sẽ được JS điền vào) -->
+            <nav id="sidebar-nav" class="flex-1 p-4 space-y-2 overflow-y-auto">
+                <!-- Menu động sẽ được chèn vào đây -->
+            </nav>
+        </aside>
+
+        <!-- Main Content (Nội dung chính) -->
+        <div class="flex-1 flex flex-col ml-64">
+            <!-- Top Header (Thanh tiêu đề trên) -->
+            <header class="bg-white shadow-sm p-4 flex justify-between items-center z-0">
+                <div class="flex items-center">
+                    <button class="text-gray-600 lg:hidden">
+                        <ion-icon name="menu-outline" class="text-2xl"></ion-icon>
+                    </button>
+                    <h1 class="text-xl font-semibold text-gray-800 ml-2" id="main-title">Loading...</h1>
+                </div>
+                <div class="flex items-center">
+                    <!-- Breadcrumbs -->
+                    <nav class="text-sm text-gray-500 hidden md:block">
+                        <ol class="list-none p-0 inline-flex" id="breadcrumbs">
+                            <!-- Breadcrumbs động -->
+                        </ol>
+                    </nav>
+                    <div class="ml-4">
+                        <img src="https://placehold.co/32x32/000000/white?text=A" alt="User" class="rounded-full w-8 h-8">
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area (Khu vực nội dung) -->
+            <main class="flex-1 p-6 overflow-y-auto" id="main-content">
+                <!-- Nội dung sẽ được tải động vào đây -->
+            </main>
+        </div>
+    </div>
+
+    <!-- 
+    ================================================================
+    PHẦN SCRIPT CHO CÁC MODULE (Cập nhật theo Use Case)
+    ================================================================
+    -->
+
+    <!-- MODULES CHO ADMIN VÀ MANAGER -->
+
+    <!-- Module: Quản lý Hộ khẩu - Nhân khẩu -->
+    <script>
+        window.moduleHoKhau = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-semibold">Quản lý Hộ khẩu - Nhân khẩu</h2>
+                        <div>
+                            <button id="btn-tach-ho" class="px-4 py-2 bg-yellow-500 text-white rounded-lg shadow hover:bg-yellow-600 mr-2">Tách hộ</button>
+                            <button id="btn-them-ho" class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600">Thêm hộ khẩu mới</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Bảng danh sách hộ khẩu -->
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mã Hộ Khẩu</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chủ Hộ</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Địa chỉ</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số nhân khẩu</th>
+                                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <!-- Dữ liệu mẫu -->
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">HK001</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Nguyễn Văn A</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Số 1, đường ABC, phường XYZ...</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">4</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                                        <a href="#" class="text-blue-600 hover:text-blue-900 btn-xem-chi-tiet" data-id="HK001">Xem/Sửa nhân khẩu</a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">HK002</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Trần Thị B</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Số 2, đường ABC, phường XYZ...</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                                        <a href="#" class="text-blue-600 hover:text-blue-900 btn-xem-chi-tiet" data-id="HK002">Xem/Sửa nhân khẩu</a>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            function getMainHtml() { return mainHtml; }
+            
+            function init() {
+                console.log("Module 'Quản lý Hộ khẩu' đã được khởi tạo.");
+                // Gán sự kiện cho các nút
+                document.getElementById('btn-them-ho').addEventListener('click', () => {
+                    console.log('Hành động: Thêm mới hộ khẩu');
+                });
+                document.getElementById('btn-tach-ho').addEventListener('click', () => {
+                    console.log('Hành động: Tách hộ');
+                });
+                document.querySelectorAll('.btn-xem-chi-tiet').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const id = e.target.dataset.id;
+                        console.log(`Hành động: Xem/Sửa nhân khẩu của hộ ${id}`);
+                        // Logic xem chi tiết (thêm/xóa/cập nhật nhân khẩu, xem lịch sử...) sẽ ở đây
+                    });
+                });
+            }
+
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- Module: Thống kê -->
+    <script>
+        window.moduleThongKe = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-2xl font-semibold mb-4">Thống kê</h2>
+                    <p>Giao diện cho các hành động: Thống kê theo giới tính, độ tuổi, khu vực, thời gian...</p>
+                    <!-- Ví dụ giao diện thống kê -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div class="bg-blue-100 p-4 rounded-lg">
+                            <div class="text-sm font-medium text-blue-800">Tổng số Hộ khẩu</div>
+                            <div class="text-3xl font-bold text-blue-900">1,204</div>
+                        </div>
+                        <div class="bg-green-100 p-4 rounded-lg">
+                            <div class="text-sm font-medium text-green-800">Tổng số Nhân khẩu</div>
+                            <div class="text-3xl font-bold text-green-900">4,512</div>
+                        </div>
+                        <div class="bg-yellow-100 p-4 rounded-lg">
+                            <div class="text-sm font-medium text-yellow-800">Số đơn Tạm vắng/trú</div>
+                            <div class="text-3xl font-bold text-yellow-900">78</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Thống kê' đã được khởi tạo.");
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- MODULES CHO ADMIN -->
+
+    <!-- Module: Phân quyền & Quản lý Tài khoản -->
+    <script>
+        window.modulePhanQuyen = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-2xl font-semibold mb-4">Phân quyền & Quản lý Tài khoản</h2>
+                    <p>Giao diện cho Admin thực hiện: Phân quyền, Quản lý tài khoản người dùng.</p>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Phân quyền' đã được khởi tạo.");
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- MODULES CHO MANAGER (Tổ trưởng) -->
+
+    <!-- Module: Duyệt đơn Tạm trú / Tạm vắng -->
+    <script>
+        window.moduleDuyetDon = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-2xl font-semibold mb-4">Duyệt đơn Tạm trú / Tạm vắng</h2>
+                    <p>Giao diện cho Tổ trưởng: Phê duyệt / từ chối đơn, Theo dõi danh sách.</p>
+                    <!-- Bảng danh sách đơn chờ duyệt -->
+                    <div class="overflow-x-auto mt-4">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại đơn</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người gửi</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ngày gửi</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <tr>
+                                    <td class="px-6 py-4 text-sm font-medium text-gray-900">Tạm vắng</td>
+                                    <td class="px-6 py-4 text-sm text-gray-500">Lê Thị C</td>
+                                    <td class="px-6 py-4 text-sm text-gray-500">01/11/2025</td>
+                                    <td class="px-6 py-4 text-sm font-medium text-right">
+                                        <button class="px-3 py-1 bg-green-500 text-white rounded shadow-sm text-xs hover:bg-green-600">Duyệt</button>
+                                        <button class="px-3 py-1 bg-red-500 text-white rounded shadow-sm text-xs hover:bg-red-600 ml-2">Từ chối</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Duyệt Đơn' đã được khởi tạo.");
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- Module: Tiếp nhận Phản ánh - Kiến nghị -->
+    <script>
+        window.moduleTiepNhanPhanAnh = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-2xl font-semibold mb-4">Tiếp nhận Phản ánh - Kiến nghị</h2>
+                    <p>Giao diện cho Tổ trưởng: Phân loại, ghi nhận, Gửi lên cấp trên, Nhận phản hồi, Thông báo cho người dân...</p>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Tiếp nhận Phản ánh' đã được khởi tạo.");
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- MODULES CHO USER (Người dân) -->
+
+    <!-- Module: Đăng ký Tạm trú -->
+    <script>
+        window.moduleTamTru = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow max-w-lg mx-auto">
+                    <h2 class="text-2xl font-semibold mb-4">Đăng ký Tạm trú</h2>
+                    <form id="form-tam-tru" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Họ và tên</label>
+                            <input type="text" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Địa chỉ tạm trú</label>
+                            <input type="text" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Lý do</label>
+                            <textarea class="mt-1 p-2 border rounded-lg w-full h-32"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600">Gửi đơn</button>
+                    </form>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Đăng ký Tạm trú' đã được khởi tạo.");
+                document.getElementById('form-tam-tru').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    console.log('Hành động: Gửi đơn tạm trú');
+                });
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- Module: Đăng ký Tạm vắng -->
+    <script>
+        window.moduleTamVang = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow max-w-lg mx-auto">
+                    <h2 class="text-2xl font-semibold mb-4">Đăng ký Tạm vắng</h2>
+                    <form id="form-tam-vang" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Họ và tên</label>
+                            <input type="text" class="mt-1 p-2 border rounded-lg w-full" value="Người Dùng A" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Thời gian tạm vắng (Từ ngày... đến ngày...)</label>
+                            <input type="date" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Lý do</label>
+                            <textarea class="mt-1 p-2 border rounded-lg w-full h-32"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600">Gửi đơn</button>
+                    </form>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Đăng ký Tạm vắng' đã được khởi tạo.");
+                document.getElementById('form-tam-vang').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    console.log('Hành động: Gửi đơn tạm vắng');
+                });
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- Module: Gửi Phản ánh - Kiến nghị -->
+    <script>
+        window.modulePhanAnh = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow max-w-lg mx-auto">
+                    <h2 class="text-2xl font-semibold mb-4">Gửi Phản ánh - Kiến nghị</h2>
+                    <form id="form-phan-anh" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Tiêu đề</label>
+                            <input type="text" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Nội dung phản ánh</label>
+                            <textarea class="mt-1 p-2 border rounded-lg w-full h-32"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600">Gửi phản ánh</button>
+                    </form>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Gửi Phản ánh' đã được khởi tạo.");
+                document.getElementById('form-phan-anh').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    console.log('Hành động: Gửi phản ánh');
+                });
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- Module: Xem Phản hồi (Thêm mới, dựa trên use case) -->
+    <script>
+        window.moduleXemPhanHoi = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-2xl font-semibold mb-4">Xem Trạng thái Phản hồi</h2>
+                    <p>Giao diện cho Người dân: Xem phản hồi từ cấp trên (mới ghi nhận, đang xử lý, đã giải quyết).</p>
+                    <div class="overflow-x-auto mt-4">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ngày gửi</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tiêu đề</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <tr>
+                                    <td class="px-6 py-4 text-sm text-gray-500">30/10/2025</td>
+                                    <td class="px-6 py-4 text-sm font-medium text-gray-900">Kiến nghị về rác thải</td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                            Đã giải quyết
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="px-6 py-4 text-sm text-gray-500">01/11/2025</td>
+                                    <td class="px-6 py-4 text-sm font-medium text-gray-900">Phản ánh tiếng ồn</td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                            Đang xử lý
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+
+            function init() {
+                console.log("Module 'Xem Phản hồi' đã được khởi tạo.");
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- MODULE CHUNG (cho tất cả) -->
+
+    <!-- Module: Đổi mật khẩu -->
+    <script>
+        window.moduleDoiMatKhau = (() => {
+            const mainHtml = `
+                <div class="bg-white p-6 rounded-lg shadow max-w-md mx-auto">
+                    <h2 class="text-2xl font-semibold mb-6 text-center">Đổi mật khẩu</h2>
+                    <form id="form-doi-mat-khau" class="space-y-4">
+                        <div>
+                            <label for="current-pass" class="block text-sm font-medium text-gray-700">Mật khẩu cũ</label>
+                            <input type="password" id="current-pass" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label for="new-pass" class="block text-sm font-medium text-gray-700">Mật khẩu mới</label>
+                            <input type="password" id="new-pass" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <div>
+                            <label for="confirm-pass" class="block text-sm font-medium text-gray-700">Xác nhận mật khẩu mới</label>
+                            <input type="password" id="confirm-pass" class="mt-1 p-2 border rounded-lg w-full">
+                        </div>
+                        <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600">Lưu thay đổi</button>
+                    </form>
+                </div>
+            `;
+            function getMainHtml() { return mainHtml; }
+            function init() {
+                console.log("Module 'Đổi mật khẩu' đã được khởi tạo.");
+                document.getElementById('form-doi-mat-khau').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    console.log('Form đổi mật khẩu đã được gửi.');
+                });
+            }
+            return { getMainHtml, init };
+        })();
+    </script>
+
+    <!-- 
+    ================================================================
+    SCRIPT CHÍNH (MAIN APP)
+    Cấu hình và phân quyền dựa trên Use Case
+    ================================================================
+    -->
+    <script>
+        // Lấy các DOM element cần thiết
+        const mainContent = document.getElementById('main-content');
+        const mainTitle = document.getElementById('main-title');
+        const breadcrumbs = document.getElementById('breadcrumbs');
+        const sidebarNav = document.getElementById('sidebar-nav');
+        const userNameEl = document.getElementById('user-name');
+        const userEmailEl = document.getElementById('user-email');
+
+        // Cấu hình các module (Tương ứng với Use Case)
+        const moduleConfig = {
+            // Admin
+            'modulePhanQuyen': { title: 'Phân quyền & Tài khoản', icon: 'key-outline' },
+            // Admin & Manager
+            'moduleHoKhau': { title: 'Quản lý Hộ khẩu', icon: 'home-outline' },
+            'moduleThongKe': { title: 'Thống kê', icon: 'bar-chart-outline' },
+            // Manager (Tổ trưởng)
+            'moduleDuyetDon': { title: 'Duyệt đơn Tạm trú/vắng', icon: 'checkmark-done-outline' },
+            'moduleTiepNhanPhanAnh': { title: 'Tiếp nhận Phản ánh', icon: 'archive-outline' },
+            // User (Người dân)
+            'moduleTamTru': { title: 'Đăng ký Tạm trú', icon: 'document-text-outline' },
+            'moduleTamVang': { title: 'Đăng ký Tạm vắng', icon: 'document-attach-outline' },
+            'modulePhanAnh': { title: 'Gửi Phản ánh', icon: 'chatbubble-ellipses-outline' },
+            'moduleXemPhanHoi': { title: 'Xem Phản hồi', icon: 'eye-outline' },
+            // Chung
+            'moduleDoiMatKhau': { title: 'Đổi mật khẩu', icon: 'lock-closed-outline' }
+        };
+
+        // Cấu hình phân quyền (Dựa trên Use Case)
+        const rolePermissions = {
+            'admin': [
+                'modulePhanQuyen',
+                'moduleHoKhau',
+                'moduleThongKe',
+                'moduleDoiMatKhau'
+            ],
+            'manager': [ // Tổ trưởng
+                'moduleHoKhau',
+                'moduleThongKe',
+                'moduleDuyetDon',
+                'moduleTiepNhanPhanAnh',
+                'moduleDoiMatKhau'
+            ],
+            'user': [ // Người dân
+                'moduleTamTru',
+                'moduleTamVang',
+                'modulePhanAnh',
+                'moduleXemPhanHoi',
+                'moduleDoiMatKhau'
+            ]
+        };
+
+        // Hàm để tải module (Không đổi)
+        function loadModule(moduleName) {
+            const module = window[moduleName];
+            const config = moduleConfig[moduleName];
+
+            if (!module || !config) {
+                console.error(`Không tìm thấy module: ${moduleName}`);
+                mainContent.innerHTML = `<div class="bg-white p-6 rounded-lg shadow"><h2 class="text-2xl font-semibold mb-4 text-red-500">Lỗi</h2><p>Không tìm thấy nội dung cho module '${moduleName}'.</p></div>`;
+                return;
+            }
+            
+            console.log(`Đang tải module: ${config.title}`);
+
+            mainContent.innerHTML = module.getMainHtml();
+            mainTitle.textContent = config.title;
+            breadcrumbs.innerHTML = `
+                <li class="flex items-center">
+                    <a href="#" class="hover:text-blue-500">Trang chủ</a>
+                    <span class="mx-2">/</span>
+                </li>
+                <li class="flex items-center">
+                    <span>${config.title}</span>
+                </li>
+            `;
+            
+            const allLinks = sidebarNav.querySelectorAll('.sidebar-link');
+            allLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.dataset.module === moduleName) {
+                    link.classList.add('active');
+                }
+            });
+            
+            if (typeof module.init === 'function') {
+                module.init();
+            } else {
+                console.warn(`Module ${moduleName} không có hàm init().`);
+            }
+        }
+
+        // Hàm tạo sidebar dựa trên vai trò (Không đổi)
+        function initSidebar(role) {
+            const allowedModules = rolePermissions[role];
+            if (!allowedModules) {
+                sidebarNav.innerHTML = '<p class="p-4 text-red-500">Vai trò không hợp lệ.</p>';
+                return null;
+            }
+
+            let navHtml = '';
+            allowedModules.forEach(moduleName => {
+                const config = moduleConfig[moduleName];
+                if (config && moduleName !== 'moduleDoiMatKhau') { 
+                    navHtml += `
+                        <a href="#" class="flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200 sidebar-link" data-module="${moduleName}">
+                            <ion-icon name="${config.icon}" class="mr-3 text-lg"></ion-icon>
+                            <span>${config.title}</span>
+                        </a>
+                    `;
+                }
+            });
+
+            navHtml += `
+                <a href="#" class="flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200 sidebar-link" data-module="moduleDoiMatKhau">
+                    <ion-icon name="lock-closed-outline" class="mr-3 text-lg"></ion-icon>
+                    <span>Đổi mật khẩu</span>
+                </a>
+            `;
+            navHtml += `
+                <a href="#" class="flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200" data-module="moduleDangXuat" onclick="handleLogout()">
+                    <ion-icon name="log-out-outline" class="mr-3 text-lg"></ion-icon>
+                    <span>Đăng xuất</span>
+                </a>
+            `;
+
+            sidebarNav.innerHTML = navHtml;
+            const sidebarLinks = sidebarNav.querySelectorAll('.sidebar-link');
+            sidebarLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const moduleName = this.dataset.module;
+                    loadModule(moduleName);
+                });
+            });
+
+            return allowedModules[0]; 
+        }
+
+        function handleLogout() {
+            console.log('Hành động: Đăng xuất người dùng');
+            // Xóa thông tin đăng nhập (ví dụ: localStorage.removeItem('userRole');)
+            // Chuyển hướng về trang đăng nhập
+            window.location.href = 'login.html';
+        }
+        // Tải ứng dụng khi DOM sẵn sàng (Không đổi)
+        document.addEventListener('DOMContentLoaded', () => {
+            const userRole = localStorage.getItem('userRole'); 
+
+            if (!userRole) {
+                 sidebarNav.innerHTML = '<p class="p-4 text-red-500">Bạn chưa đăng nhập. Vui lòng quay lại trang <a href="login.html" class="font-bold underline">đăng nhập</a>.</p>';
+                 mainTitle.textContent = "Chưa đăng nhập";
+                 mainContent.innerHTML = '';
+                 return;
+            }
+            
+            let roleName = '';
+            if (userRole === 'admin') roleName = 'Admin';
+            else if (userRole === 'manager') roleName = 'Tổ trưởng';
+            else if (userRole === 'user') roleName = 'Người dân';
+            else roleName = 'Khách';
+
+            userNameEl.textContent = roleName;
+            userEmailEl.textContent = `${userRole}@example.com`;
+
+            const defaultModule = initSidebar(userRole);
+
+            if (defaultModule) {
+                loadModule(defaultModule);
+            } else {
+                mainContent.innerHTML = '<p class="p-4">Bạn không có quyền truy cập module nào.</p>';
+                mainTitle.textContent = "Không có quyền";
+            }
+        });
+    </script>
+
+</body>
+</html>
+

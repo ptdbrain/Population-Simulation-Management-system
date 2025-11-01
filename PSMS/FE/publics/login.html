@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style> 
+        body { font-family: 'Inter', sans-serif; } 
+        /* Nút đăng nhập nhanh để mô phỏng */
+        .login-as {
+            background: none;
+            border: 1px solid #3b82f6; /* blue-500 */
+            color: #3b82f6;
+            padding: 4px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .login-as:hover {
+            background: #eff6ff; /* blue-50 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Đăng nhập</h2>
+        
+        <!-- Form đăng nhập chính -->
+        <form id="login-form" class="space-y-4">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-700">Tên đăng nhập</label>
+                <!-- Để mô phỏng, hãy nhập "admin", "manager", hoặc "user" -->
+                <input type="text" id="username" class="mt-1 p-2 border rounded-lg w-full" value="admin" placeholder="admin, manager, hoặc user">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Mật khẩu</label>
+                <input type="password" id="password" class="mt-1 p-2 border rounded-lg w-full" value="password">
+            </div>
+            <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors">Đăng nhập</button>
+        </form>
+        
+        <!-- Các nút đăng nhập nhanh để mô phỏng -->
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-600 mb-2">Hoặc đăng nhập nhanh với vai trò:</p>
+            <div class="flex flex-col sm:flex-row justify-around mt-2 space-y-2 sm:space-y-0 sm:space-x-2">
+                <button class="login-as" data-role="admin">Admin</button>
+                <button class="login-as" data-role="manager">Tổ trưởng</button>
+                <button class="login-as" data-role="user">Người dân</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Hàm xử lý đăng nhập
+        function handleLogin(role) {
+            // Kiểm tra vai trò hợp lệ
+            if (!['admin', 'manager', 'user'].includes(role)) {
+                alert('Vai trò không hợp lệ. Vui lòng nhập "admin", "manager", hoặc "user" vào ô tên đăng nhập.');
+                return;
+            }
+            
+            console.log(`Đăng nhập với vai trò: ${role}`);
+            
+            // 1. Lưu vai trò vào localStorage
+            // Đây là chìa khóa để trang index.html biết bạn là ai
+            localStorage.setItem('userRole', role);
+            
+            // 2. Chuyển hướng đến trang chính
+            window.location.href = 'index.html';
+        }
+
+        // Xử lý form đăng nhập (dùng tên đăng nhập làm vai trò)
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const role = document.getElementById('username').value.toLowerCase().trim();
+            handleLogin(role);
+        });
+        
+        // Xử lý các nút đăng nhập nhanh
+        document.querySelectorAll('.login-as').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const role = e.target.dataset.role;
+                handleLogin(role);
+            });
+        });
+
+        // Luôn xóa vai trò cũ khi tải trang login để đảm bảo đăng nhập mới
+        localStorage.removeItem('userRole');
+    </script>
+
+</body>
+</html>
+
