@@ -1,63 +1,70 @@
-from fastapi import Depends, HTTPException, status, Security
-from sqlalchemy.orm import Session
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
-from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+
+from app.core.security import decode_access_token
 from .db import get_db
-from .auth_jwt import decode_token
 from . import models
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def get_current_user(
-    security_scopes: SecurityScopes, # danh sách phạm vi bảo mật yêu cầu 
-    token: str = Depends(oauth2_scheme), # token được truyền từ header Authorization
-    db: Session = Depends(get_db)   # phiên làm việc với cơ sở dữ liệu
-                        ) -> models.User:
+    security_scopes: SecurityScopes,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> models.User:
     """Lấy thông tin người dùng hiện tại từ token."""
     credentials_exception = HTTPException( # ngoại lệ khi xác thực thất bại
         status_code=status.HTTP_401_UNAUTHORIZED, # mã lỗi 401
         detail="Could not validate credentials",    # chi tiết lỗi
         headers={"WWW-Authenticate": "Bearer"},     # header xác thực
     )
-    payload = decode_token(token) # giải mã token để lấy payload
+    payload = decode_access_token(token)
     if payload is None:
-        raise credentials_exception # ném ngoại lệ nếu giải mã thất bại
-    username: str = payload.get("sub") # lấy tên người dùng từ payload
-    if username is None:
-        raise credentials_exception # ném ngoại lệ nếu không có tên người dùng
-    token_scopes = payload.get("scopes", [])    # lấy phạm vi bảo mật từ payload
-    user = db.query(models.User).filter(models.User.username == username).first()   # truy vấn người dùng từ cơ sở dữ liệu
+        raise credentials_exception
+
+    subject = payload.get("sub")
+    if subject is None:
+        raise credentials_exception
+    try:
+        user_id = int(subject)
+    except (TypeError, ValueError):
+        raise credentials_exception
+
+    token_scopes = payload.get("perms", [])
+    user = db.query(models.User).get(user_id)
     if user is None:
-        raise credentials_exception # ném ngoại lệ nếu không tìm thấy người dùng
-    for scope in security_scopes.scopes: # kiểm tra từng phạm vi bảo mật yêu cầu
-        if scope not in token_scopes: # nếu phạm vi không có trong token
-            raise HTTPException(    # ném ngoại lệ nếu không đủ quyền
-                status_code=status.HTTP_401_UNAUTHORIZED,   # mã lỗi 401
-                detail="Not enough permissions",    # chi tiết lỗi
-                headers={"WWW-Authenticate": f'Bearer scope="{security_scopes.scope_str}"'},    # header xác thực với phạm vi yêu cầu
+        raise credentials_exception
+
+    for scope in security_scopes.scopes:
+        if scope not in token_scopes:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not enough permissions",
+                headers={"WWW-Authenticate": f'Bearer scope=\"{security_scopes.scope_str}\"'},
             )
     return user
 
 
 def require_permission(permission_code : str):
-    def _checker(user = Depends(get_current_user), db: Session = Depends(get_db)): # phụ thuộc vào người dùng hiện tại và phiên làm việc với cơ sở dữ liệu
-        rows = db.execute(    # truy vấn để kiểm tra quyền
+    def _checker(user = Depends(get_current_user), db: Session = Depends(get_db)):
+        row = db.execute(
             """
             SELECT 1
             FROM user_roles ur
             JOIN role_permissions rp ON ur.role_id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id
-            WHERE ur.user_id = :user_id AND p.name = :permission_name
+            WHERE ur.user_id = :user_id AND p.code = :permission_code
             """,
-            {"user_id": user.id, "permission_name": permission_code}
-        ).fetchall()
+            {"user_id": user.id, "permission_code": permission_code},
+        ).fetchone()
 
-        perm_set = {r[0] for r in rows} # tập hợp các quyền từ kết quả truy vấn
-        if permission_code not in perm_set: # nếu quyền yêu cầu không có trong tập hợp
-            raise HTTPException(    # ném ngoại lệ nếu không đủ quyền
-                status_code=status.HTTP_403_FORBIDDEN,   # mã lỗi 403
-                detail="You do not have permission to perform this action."  # chi tiết lỗi
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action."
             )
-        return True # trả về True nếu có quyền
-    return _checker         # trả về hàm kiểm tra quyền
+        return True
+
+    return _checker
 

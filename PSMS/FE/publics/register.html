@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng ký tài khoản</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .link { color: #2563eb; font-weight: 500; }
+        .link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-lg">
+        <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Tạo tài khoản mới</h2>
+
+        <div id="alert" class="hidden mb-4 text-sm font-medium rounded p-3"></div>
+
+        <form id="register-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Họ và tên</label>
+                    <input type="text" id="full_name" class="mt-1 p-2 border rounded-lg w-full" placeholder="Nguyễn Văn A">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Số điện thoại</label>
+                    <input type="text" id="phone" class="mt-1 p-2 border rounded-lg w-full" placeholder="0901234567">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Email</label>
+                <input type="email" id="email" class="mt-1 p-2 border rounded-lg w-full" placeholder="user@example.com">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Tên đăng nhập *</label>
+                <input type="text" id="username" class="mt-1 p-2 border rounded-lg w-full" placeholder="username" required>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Vai trò</label>
+                    <select id="role" class="mt-1 p-2 border rounded-lg w-full">
+                        <option value="citizen">Người dân (Citizen)</option>
+                        <option value="leader">Tổ trưởng (Leader)</option>
+                        <option value="admin">Quản trị (Admin)</option>
+                    </select>
+                </div>
+                <div id="role-secret-wrapper" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700">Mã bảo mật vai trò</label>
+                    <input type="password" id="role_secret" class="mt-1 p-2 border rounded-lg w-full" placeholder="Nhập mã do quản trị cung cấp">
+                    <p class="text-xs text-gray-500 mt-1">Chỉ yêu cầu với Tổ trưởng/Admin.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Mật khẩu *</label>
+                    <input type="password" id="password" class="mt-1 p-2 border rounded-lg w-full" placeholder="Tối thiểu 8 ký tự" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Xác nhận mật khẩu *</label>
+                    <input type="password" id="confirm_password" class="mt-1 p-2 border rounded-lg w-full" required>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors">
+                Đăng ký
+            </button>
+        </form>
+
+        <p class="text-center text-sm text-gray-600 mt-4">
+            Đã có tài khoản?
+            <a href="login.html" class="link">Đăng nhập</a>
+        </p>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        const form = document.getElementById('register-form');
+        const alertBox = document.getElementById('alert');
+
+        const showAlert = (message, type = 'error') => {
+            alertBox.textContent = message;
+            alertBox.classList.remove('hidden');
+            if (type === 'success') {
+                alertBox.className = 'mb-4 text-sm font-medium rounded p-3 bg-green-100 text-green-700';
+            } else {
+                alertBox.className = 'mb-4 text-sm font-medium rounded p-3 bg-red-100 text-red-700';
+            }
+        };
+
+        const hideAlert = () => {
+            alertBox.classList.add('hidden');
+        };
+
+        const roleSelect = document.getElementById('role');
+        const roleSecretWrapper = document.getElementById('role-secret-wrapper');
+        const roleSecretInput = document.getElementById('role_secret');
+
+        const toggleRoleSecret = () => {
+            const value = roleSelect.value;
+            if (value === 'citizen') {
+                roleSecretWrapper.classList.add('hidden');
+                roleSecretInput.value = '';
+            } else {
+                roleSecretWrapper.classList.remove('hidden');
+            }
+        };
+
+        roleSelect.addEventListener('change', toggleRoleSecret);
+        toggleRoleSecret();
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideAlert();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const confirmPassword = document.getElementById('confirm_password').value.trim();
+            const fullName = document.getElementById('full_name').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const role = roleSelect.value;
+            const roleSecret = roleSecretInput.value.trim();
+
+            if (!username || !password || !confirmPassword) {
+                showAlert('Vui lòng nhập đầy đủ các trường bắt buộc.');
+                return;
+            }
+            if (password.length < 8) {
+                showAlert('Mật khẩu phải có ít nhất 8 ký tự.');
+                return;
+            }
+            if (password !== confirmPassword) {
+                showAlert('Mật khẩu xác nhận không khớp.');
+                return;
+            }
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Đang xử lý...';
+
+            if (role !== 'citizen' && !roleSecret) {
+                showAlert('Vui lòng nhập mã bảo mật cho vai trò đã chọn.');
+                return;
+            }
+
+            try {
+                await window.PSMSApi.register({
+                    username,
+                    password,
+                    full_name: fullName,
+                    email,
+                    phone,
+                    role,
+                    role_secret: roleSecret || null,
+                });
+                showAlert('Đăng ký thành công! Đang đăng nhập...', 'success');
+                await window.PSMSApi.login(username, password);
+                window.location.href = 'index.html';
+            } catch (err) {
+                showAlert(err.message || 'Đăng ký thất bại, vui lòng thử lại.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Đăng ký';
+            }
+        });
+    </script>
+</body>
+</html>
+

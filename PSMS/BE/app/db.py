@@ -1,14 +1,12 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
-from dotenv import load_dotenv
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
+from app.core.config import settings
 
-engine = create_engine(DATABASE_URL, future = True) # có nghĩa là sử dụng các tính năng mới của SQLAlchemy
-SessionLocal = sessionmaker(bind = engine, autocommit = False, autoflush = False) # cấu hình session , không tự động commit và flush
-Base = declarative_base() # cơ sở để định nghĩa các mô hình (models)
+connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(settings.DATABASE_URL, future=True, connect_args=connect_args)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+Base = declarative_base()
 
 def get_db():
     db = SessionLocal() # tạo một phiên làm việc với cơ sở dữ liệu

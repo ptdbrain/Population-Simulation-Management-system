@@ -94,6 +94,8 @@
     ================================================================
     -->
 
+    <script src="js/api.js"></script>
+
     <!-- MODULES CHO ADMIN VÀ MANAGER -->
 
     <!-- Module: Quản lý Hộ khẩu - Nhân khẩu -->
@@ -121,28 +123,12 @@
                                     <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
                                 </tr>
                             </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <!-- Dữ liệu mẫu -->
-                                <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">HK001</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Nguyễn Văn A</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Số 1, đường ABC, phường XYZ...</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">4</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                        <a href="#" class="text-blue-600 hover:text-blue-900 btn-xem-chi-tiet" data-id="HK001">Xem/Sửa nhân khẩu</a>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">HK002</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Trần Thị B</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Số 2, đường ABC, phường XYZ...</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                        <a href="#" class="text-blue-600 hover:text-blue-900 btn-xem-chi-tiet" data-id="HK002">Xem/Sửa nhân khẩu</a>
-                                    </td>
-                                </tr>
+                            <tbody id="households-body" class="bg-white divide-y divide-gray-200">
+                                <tr><td colspan="5" class="px-6 py-4 text-sm text-gray-500">Đang tải dữ liệu...</td></tr>
                             </tbody>
                         </table>
+                        <p id="households-empty" class="text-center text-sm text-gray-500 mt-4 hidden">Chưa có hộ khẩu nào.</p>
+                        <p id="households-error" class="text-center text-sm text-red-500 mt-4 hidden"></p>
                     </div>
                 </div>
             `;
@@ -150,22 +136,63 @@
             function getMainHtml() { return mainHtml; }
             
             function init() {
-                console.log("Module 'Quản lý Hộ khẩu' đã được khởi tạo.");
-                // Gán sự kiện cho các nút
                 document.getElementById('btn-them-ho').addEventListener('click', () => {
                     console.log('Hành động: Thêm mới hộ khẩu');
                 });
                 document.getElementById('btn-tach-ho').addEventListener('click', () => {
                     console.log('Hành động: Tách hộ');
                 });
-                document.querySelectorAll('.btn-xem-chi-tiet').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        const id = e.target.dataset.id;
-                        console.log(`Hành động: Xem/Sửa nhân khẩu của hộ ${id}`);
-                        // Logic xem chi tiết (thêm/xóa/cập nhật nhân khẩu, xem lịch sử...) sẽ ở đây
-                    });
-                });
+                loadHouseholds();
+            }
+
+            function renderRows(households) {
+                const tbody = document.getElementById('households-body');
+                const emptyEl = document.getElementById('households-empty');
+                const errorEl = document.getElementById('households-error');
+                if (!tbody) return;
+                emptyEl.classList.add('hidden');
+                errorEl.classList.add('hidden');
+
+                if (!households.length) {
+                    tbody.innerHTML = '';
+                    emptyEl.classList.remove('hidden');
+                    return;
+                }
+
+                tbody.innerHTML = households.map((item) => {
+                    const created = item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : 'Chưa xác định';
+                    return `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.household_number}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Chưa cập nhật</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.address || 'Chưa cập nhật'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">-</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                                <button class="text-blue-600 hover:text-blue-900" data-id="${item.id}">Chi tiết</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            async function loadHouseholds() {
+                const tbody = document.getElementById('households-body');
+                const emptyEl = document.getElementById('households-empty');
+                const errorEl = document.getElementById('households-error');
+                if (!tbody) return;
+
+                tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-sm text-gray-500">Đang tải dữ liệu...</td></tr>`;
+                emptyEl.classList.add('hidden');
+                errorEl.classList.add('hidden');
+
+                try {
+                    const households = await window.PSMSApi.fetchHouseholds();
+                    renderRows(Array.isArray(households) ? households : []);
+                } catch (err) {
+                    tbody.innerHTML = '';
+                    errorEl.textContent = err.message || 'Không thể tải dữ liệu hộ khẩu.';
+                    errorEl.classList.remove('hidden');
+                }
             }
 
             return { getMainHtml, init };
@@ -514,14 +541,14 @@
                 'moduleThongKe',
                 'moduleDoiMatKhau'
             ],
-            'manager': [ // Tổ trưởng
+            'leader': [ // Tổ trưởng
                 'moduleHoKhau',
                 'moduleThongKe',
                 'moduleDuyetDon',
                 'moduleTiepNhanPhanAnh',
                 'moduleDoiMatKhau'
             ],
-            'user': [ // Người dân
+            'citizen': [ // Người dân
                 'moduleTamTru',
                 'moduleTamVang',
                 'modulePhanAnh',
@@ -618,38 +645,40 @@
         }
 
         function handleLogout() {
-            console.log('Hành động: Đăng xuất người dùng');
-            // Xóa thông tin đăng nhập (ví dụ: localStorage.removeItem('userRole');)
-            // Chuyển hướng về trang đăng nhập
-            window.location.href = 'login.html';
-        }
-        // Tải ứng dụng khi DOM sẵn sàng (Không đổi)
-        document.addEventListener('DOMContentLoaded', () => {
-            const userRole = localStorage.getItem('userRole'); 
-
-            if (!userRole) {
-                 sidebarNav.innerHTML = '<p class="p-4 text-red-500">Bạn chưa đăng nhập. Vui lòng quay lại trang <a href="login.html" class="font-bold underline">đăng nhập</a>.</p>';
-                 mainTitle.textContent = "Chưa đăng nhập";
-                 mainContent.innerHTML = '';
-                 return;
+            if (!window.PSMSApi) {
+                window.location.href = 'login.html';
+                return;
             }
-            
-            let roleName = '';
-            if (userRole === 'admin') roleName = 'Admin';
-            else if (userRole === 'manager') roleName = 'Tổ trưởng';
-            else if (userRole === 'user') roleName = 'Người dân';
-            else roleName = 'Khách';
+            window.PSMSApi.logout().finally(() => {
+                window.location.href = 'login.html';
+            });
+        }
 
-            userNameEl.textContent = roleName;
-            userEmailEl.textContent = `${userRole}@example.com`;
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!window.PSMSApi || !window.PSMSApi.getSessionPayload()) {
+                window.location.href = 'login.html';
+                return;
+            }
 
-            const defaultModule = initSidebar(userRole);
+            try {
+                const profile = await window.PSMSApi.fetchCurrentUser();
+                userNameEl.textContent = profile.full_name || profile.username || 'Chưa xác định';
+                userEmailEl.textContent = profile.email || 'Chưa cập nhật';
+            } catch (err) {
+                sidebarNav.innerHTML = '<p class="p-4 text-red-500">Phiên đăng nhập không hợp lệ. Vui lòng <a href="login.html" class="font-bold underline">đăng nhập lại</a>.</p>';
+                mainContent.innerHTML = '';
+                mainTitle.textContent = 'Phiên hết hạn';
+                return;
+            }
+
+            const roleKey = window.PSMSApi.determineRole();
+            const defaultModule = initSidebar(roleKey);
 
             if (defaultModule) {
                 loadModule(defaultModule);
             } else {
                 mainContent.innerHTML = '<p class="p-4">Bạn không có quyền truy cập module nào.</p>';
-                mainTitle.textContent = "Không có quyền";
+                mainTitle.textContent = 'Không có quyền';
             }
         });
     </script>

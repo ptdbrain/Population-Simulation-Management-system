@@ -1,11 +1,13 @@
 from sqlalchemy.orm import Session
-from . import models, Schemas, auth_jwt
+
+from app.core.security import hash_password
+from . import models
 
 def get_user_by_username(db: Session, username: str):
     return db.query(models.User).filter(models.User.username == username).first()
 
 def create_user(db: Session, username: str, password: str, full_name=None, email=None, phone=None): # tạo người dùng mới với các thông tin cơ bản
-    hashed = auth_jwt.hash_password(password) # băm mật khẩu
+    hashed = hash_password(password) # băm mật khẩu
     user = models.User(username=username, password_hash=hashed, full_name=full_name, email=email, phone=phone) # tạo đối tượng người dùng
     db.add(user) # thêm vào phiên làm việc với cơ sở dữ liệu
     db.commit() # cam kết thay đổi

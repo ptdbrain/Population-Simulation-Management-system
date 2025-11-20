@@ -1,10 +1,11 @@
 # app/routers/persons.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from ..db import get_db
 from .. import models
-from ..Schemas import PersonCreate, PersonOut
+from ..Schemas import PersonCreate, PersonOut, PersonHistoryOut
 from ..deps import require_permission, get_current_user
 
 router = APIRouter(tags=["persons"])
@@ -27,12 +28,46 @@ def list_persons(skip: int = 0, limit: int = 100, db: Session = Depends(get_db),
     items = db.query(models.Person).offset(skip).limit(limit).all()
     return items
 
+@router.get("/api/persons/search", response_model=List[PersonOut])
+def search_persons(
+    keyword: str = Query(..., min_length=2),
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_permission("person.view")),
+):
+    q = (
+        db.query(models.Person)
+        .filter(
+            or_(
+                models.Person.full_name.ilike(f"%{keyword}%"),
+                models.Person.id_number.ilike(f"%{keyword}%"),
+            )
+        )
+        .limit(limit)
+    )
+    return q.all()
+
 @router.get("/api/persons/{person_id}", response_model=PersonOut)
 def get_person(person_id: int, db: Session = Depends(get_db), _perm = Depends(require_permission("person.view"))):
     p = db.query(models.Person).get(person_id)
     if not p:
         raise HTTPException(status_code=404, detail="Person not found")
     return p
+
+@router.get("/api/persons/{person_id}/history", response_model=List[PersonHistoryOut])
+def get_person_history(
+    person_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_permission("person.view")),
+):
+    return (
+        db.query(models.PersonHistory)
+        .filter(models.PersonHistory.person_id == person_id)
+        .order_by(models.PersonHistory.performed_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 @router.put("/api/persons/{person_id}")
 def update_person(person_id: int, payload: PersonCreate, db: Session = Depends(get_db), _perm = Depends(require_permission("person.update")), current_user=Depends(get_current_user)):

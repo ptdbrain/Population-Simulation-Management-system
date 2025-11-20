@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+mysqlclient or pymysql
+python-jose[cryptography]
+passlib[bcrypt]
+alembic
+databases (opt)

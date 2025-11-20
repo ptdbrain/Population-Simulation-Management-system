@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Enum, ForeignKey, TIMESTAMP
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Enum, TIMESTAMP
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .db import Base
@@ -40,6 +40,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
+    phone = Column(String(20), nullable=True)
 
 class UserRole(Base):
     __tablename__ = "user_roles"
@@ -51,7 +52,10 @@ class Household(Base):
     id = Column(Integer, primary_key=True)
     household_number = Column(String(100), unique=True, nullable=False)
     address = Column(String(255))
+    head_person_id = Column(Integer, ForeignKey("persons.id"), nullable=True, index=True)
     created_at = Column(TIMESTAMP, default=func.now())
+    head_person = relationship("Person", foreign_keys=[head_person_id], post_update=True)
+    members = relationship("Person", back_populates="household", foreign_keys="Person.current_household_id")
 
 class Person(Base):
     __tablename__ = "persons"
@@ -59,9 +63,12 @@ class Person(Base):
     full_name = Column(String(100))
     birthdate = Column(DateTime)
     gender = Column(Enum(GenderEnum))
+    id_number = Column(String(50), unique=True, nullable=True)
     current_household_id = Column(Integer, ForeignKey("households.id"))
     relation_to_head = Column(String(100))
     created_at = Column(TIMESTAMP, default=func.now())
+    household = relationship("Household", back_populates="members", foreign_keys=[current_household_id])
+    histories = relationship("PersonHistory", back_populates="person", cascade="all, delete-orphan")
 
 
 class PersonHistory(Base):
@@ -74,6 +81,7 @@ class PersonHistory(Base):
     note = Column(String(255), nullable=True)
     performed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     performed_at = Column(TIMESTAMP, default=func.now())
+    person = relationship("Person", back_populates="histories")
 
 
 class TempAbsence(Base):
@@ -85,6 +93,10 @@ class TempAbsence(Base):
     reason = Column(String(255), nullable=False)
     status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.NEW)
     registered_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(TIMESTAMP, nullable=True)
+    created_at = Column(TIMESTAMP, default=func.now())
+    updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
 
 class TempResidence(Base):
     __tablename__ = "temp_residences"
@@ -96,7 +108,10 @@ class TempResidence(Base):
     reason = Column(String(255), nullable=False)
     status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.NEW)
     registered_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(TIMESTAMP, nullable=True)
     registered_at = Column(TIMESTAMP, default=func.now()) 
+    updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
 
 class Complaint(Base): 
     __tablename__ = "complaints"
@@ -106,9 +121,13 @@ class Complaint(Base):
     category = Column(String(100), nullable=False)
     status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.NEW)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)    
+    reported_at = Column(TIMESTAMP, default=func.now())
     created_at = Column(TIMESTAMP, default=func.now())
     updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
     duplicate_count = Column(Integer, default=1)
+    response_note = Column(String(1000), nullable=True)
+    response_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    response_at = Column(TIMESTAMP, nullable=True)
 
 class ComplaintReport(Base):
     __tablename__ = "complaint_reports"
@@ -116,7 +135,6 @@ class ComplaintReport(Base):
     report_at = Column(TIMESTAMP, default=func.now())
     complaint_id = Column(Integer, ForeignKey("complaints.id"), nullable=False)
     reporter_person_id = Column(Integer, ForeignKey("persons.id"), nullable=False)
-    report_at = Column(TIMESTAMP, default=func.now())
 
 class Notification(Base):
     __tablename__ = "notifications"

@@ -51,44 +51,46 @@
                 <button class="login-as" data-role="user">Người dân</button>
             </div>
         </div>
+
+        <p class="text-center text-sm text-gray-600 mt-6">
+            Chưa có tài khoản?
+            <a href="register.html" class="font-semibold text-blue-600 hover:underline">Đăng ký ngay</a>
+        </p>
     </div>
     
+    <script src="js/api.js"></script>
     <script>
-        // Hàm xử lý đăng nhập
-        function handleLogin(role) {
-            // Kiểm tra vai trò hợp lệ
-            if (!['admin', 'manager', 'user'].includes(role)) {
-                alert('Vai trò không hợp lệ. Vui lòng nhập "admin", "manager", hoặc "user" vào ô tên đăng nhập.');
+        const form = document.getElementById('login-form');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!username || !password) {
+                alert('Vui lòng nhập tên đăng nhập và mật khẩu');
                 return;
             }
-            
-            console.log(`Đăng nhập với vai trò: ${role}`);
-            
-            // 1. Lưu vai trò vào localStorage
-            // Đây là chìa khóa để trang index.html biết bạn là ai
-            localStorage.setItem('userRole', role);
-            
-            // 2. Chuyển hướng đến trang chính
-            window.location.href = 'index.html';
-        }
 
-        // Xử lý form đăng nhập (dùng tên đăng nhập làm vai trò)
-        document.getElementById('login-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const role = document.getElementById('username').value.toLowerCase().trim();
-            handleLogin(role);
+            try {
+                form.querySelector('button[type="submit"]').disabled = true;
+                await window.PSMSApi.login(username, password);
+                window.location.href = 'index.html';
+            } catch (err) {
+                alert(err.message || 'Đăng nhập thất bại');
+            } finally {
+                form.querySelector('button[type="submit"]').disabled = false;
+            }
         });
-        
-        // Xử lý các nút đăng nhập nhanh
+
         document.querySelectorAll('.login-as').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const role = e.target.dataset.role;
-                handleLogin(role);
+            button.addEventListener('click', () => {
+                usernameInput.value = button.dataset.role;
+                passwordInput.focus();
             });
         });
-
-        // Luôn xóa vai trò cũ khi tải trang login để đảm bảo đăng nhập mới
-        localStorage.removeItem('userRole');
     </script>
 
 </body>
