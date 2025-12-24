@@ -1,0 +1,114 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from typing import Optional
+import difflib
+
+from app.database import get_db
+from app.core.security import get_current_user, PermissionChecker
+from app.models.complaint_models import Complaint, ComplaintStatus, ComplaintCategory
+from app.models.auth_models import User
+
+router = APIRouter(prefix="/complaints", tags=["Complaints"])
+
+class ComplaintCreate(BaseModel):
+    content: str
+    category: ComplaintCategory
+
+@router.post("/", response_model=dict)
+async def create_complaint(complaint: ComplaintCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 1. Fetch active complaints in same category within last 72h
+    seventy_two_hours_ago = datetime.utcnow() - timedelta(hours=72)
+    
+    result = await db.execute(
+        select(Complaint)
+        .where(
+            Complaint.status != ComplaintStatus.RESOLVED,
+            Complaint.category == complaint.category,
+            Complaint.created_at >= seventy_two_hours_ago
+        )
+    )
+    active_complaints = result.scalars().all()
+    
+    match_found = None
+    
+    for existing in active_complaints:
+        # Fuzzy Match 70%
+        matcher = difflib.SequenceMatcher(None, existing.content, complaint.content)
+        if matcher.ratio() >= 0.7:
+            match_found = existing
+            break
+            
+    if match_found:
+        # Update existing
+        match_found.duplication_count += 1
+        
+        # Append reporter to list (JSON)
+        # Handle list init safely
+        reporter_list = list(match_found.reporter_list) if match_found.reporter_list else []
+        reporter_list.append({"user_id": current_user.id, "username": current_user.username, "at": datetime.utcnow().isoformat()})
+        match_found.reporter_list = reporter_list
+        
+        db.add(match_found)
+        await db.commit()
+        return {"status": "deduplicated", "message": "Similar complaint found. Count incremented.", "complaint_id": match_found.id}
+        
+    else:
+        # Create new
+        new_complaint = Complaint(
+            reporter_id=current_user.id,
+            content=complaint.content,
+            category=complaint.category,
+            reporter_list=[{"user_id": current_user.id, "username": current_user.username, "at": datetime.utcnow().isoformat()}]
+        )
+        db.add(new_complaint)
+        await db.commit()
+        await db.refresh(new_complaint)
+        return {"status": "created", "complaint_id": new_complaint.id}
+
+@router.put("/{id}/status", dependencies=[Depends(PermissionChecker("complaint.update_status"))])
+async def update_complaint_status(id: int, status: ComplaintStatus, resolution_note: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    complaint = await db.get(Complaint, id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+        
+    complaint.status = status
+    if resolution_note:
+        complaint.resolution_note = resolution_note
+        
+    db.add(complaint)
+    await db.commit()
+    return {"status": "success"}
+
+class ComplaintUpdate(BaseModel):
+    status: Optional[ComplaintStatus] = None
+    resolution_note: Optional[str] = None
+
+@router.put("/{id}", dependencies=[Depends(PermissionChecker("complaint.update_status"))])
+async def update_complaint(id: int, data: ComplaintUpdate, db: AsyncSession = Depends(get_db)):
+    complaint = await db.get(Complaint, id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+        
+    if data.status:
+        complaint.status = data.status
+    if data.resolution_note:
+        complaint.resolution_note = data.resolution_note
+        
+    db.add(complaint)
+    await db.commit()
+    return {"status": "success", "message": "Complaint updated"}
+
+@router.get("/{id}")
+async def get_complaint(id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    complaint = await db.get(Complaint, id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    return complaint
+
+@router.get("/")
+async def get_complaints(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    result = await db.execute(select(Complaint))
+    return result.scalars().all()

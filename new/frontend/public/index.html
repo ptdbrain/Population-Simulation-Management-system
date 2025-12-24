@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Residence & Complaint Management System</title>
+    <!-- Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- AUTHENTICATION (Login Overlay) -->
+    <div id="auth-overlay" class="login-container"
+        style="position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; display: flex !important; align-items: center !important; justify-content: center !important; z-index: 9999 !important; background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%) !important; overflow: hidden !important;">
+        <!-- Animated Background Shapes -->
+        <div class="login-bg-shape login-bg-shape-1"></div>
+        <div class="login-bg-shape login-bg-shape-2"></div>
+        <div class="login-bg-shape login-bg-shape-3"></div>
+
+        <div class="login-box">
+            <!-- Brand Header -->
+            <div class="login-brand">
+                <div class="login-brand-icon">🏢</div>
+                <h1 class="login-brand-title">RESI-MANAGER</h1>
+                <p class="login-brand-subtitle">Hệ thống Quản lý Cư dân</p>
+            </div>
+
+            <!-- Login Form -->
+            <form class="login-form" onsubmit="login(); return false;">
+                <div class="login-input-group">
+                    <label class="login-label">Tên đăng nhập</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">👤</span>
+                        <input type="text" id="username" class="login-input" placeholder="Nhập tên đăng nhập"
+                            autocomplete="username">
+                    </div>
+                </div>
+
+                <div class="login-input-group">
+                    <label class="login-label">Mật khẩu</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">🔒</span>
+                        <input type="password" id="password" class="login-input" placeholder="Nhập mật khẩu"
+                            autocomplete="current-password">
+                    </div>
+                </div>
+
+                <button type="submit" class="login-btn">
+                    <span>Đăng nhập</span>
+                    <span class="login-btn-icon">→</span>
+                </button>
+
+                <p id="login-error" class="login-error"></p>
+            </form>
+
+            <!-- Footer -->
+            <div class="login-footer">
+                <p>© 2024 Resi-Manager. Bảo mật & An toàn.</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MAIN APP STRUCTURE -->
+    <div class="sidebar">
+        <div class="brand">
+            <span class="brand-icon">🏢</span>
+            RESI-MANAGER
+        </div>
+        <div class="nav-menu">
+            <a href="#" class="nav-item active" onclick="switchTab('statistics')">
+                <span class="nav-icon">📊</span> Tổng quan
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('households')">
+                <span class="nav-icon">🏠</span> Quản lý Hộ khẩu
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('persons')">
+                <span class="nav-icon">👥</span> Quản lý Nhân khẩu
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('temporary')">
+                <span class="nav-icon">📋</span> Tạm trú / Tạm vắng
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('complaints')">
+                <span class="nav-icon">📢</span> Phản ánh / Kiến nghị
+                <span class="nav-badge" id="complaints-count">3</span>
+            </a>
+        </div>
+        <div class="user-profile">
+            <div class="avatar">AD</div>
+            <div class="user-info">
+                <span class="user-name" id="user-display-name">Admin</span>
+                <span class="user-role">Tổ trưởng</span>
+            </div>
+            <a href="#" onclick="logout()" style="margin-left: auto; color: #94a3b8;"><span
+                    class="nav-icon">🚪</span></a>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <!-- TOP HEADER -->
+        <header class="top-header">
+            <div class="page-title" id="page-title">Tổng quan Tổ dân phố</div>
+            <div class="header-actions">
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" placeholder="Tìm kiếm cư dân, hộ khẩu..."
+                        id="global-search">
+                </div>
+                <button class="btn-icon">🔔</button>
+                <button class="btn-primary" onclick="showAddModal()">
+                    <span>+</span> Thêm mới
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+
+            <!-- 1. STATISTICS DASHBOARD (Default) -->
+            <div id="tab-statistics" class="tab-content active">
+                <div class="dashboard-grid">
+                    <!-- Row 1: KPI Cards -->
+                    <div class="kpi-row">
+                        <div class="kpi-card">
+                            <div class="kpi-icon-box">👥</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label">Tổng nhân khẩu</div>
+                                <div class="kpi-value" id="total-persons">0</div>
+                                <div class="kpi-trend trend-up">↑ Ổn định</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-icon-box">🏠</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label">Hộ gia đình</div>
+                                <div class="kpi-value" id="total-households">0</div>
+                                <div class="kpi-trend">00 Mới tháng này</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-icon-box warning">📋</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label">Tạm vắng / Tạm trú</div>
+                                <div class="kpi-value" id="total-absent">0 / 0</div>
+                                <div class="kpi-trend">Cần rà soát</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-icon-box danger">📢</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label">Phản ánh chờ xử lý</div>
+                                <div class="kpi-value" id="total-complaints">0</div>
+                                <div class="kpi-trend trend-down">Mức độ khẩn cấp</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Charts -->
+                    <div class="charts-row">
+                        <!-- Demographics (Bar/Pyramid) -->
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">Phân bố độ tuổi</div>
+                            </div>
+                            <canvas id="age-chart"></canvas>
+                        </div>
+                        <!-- Residency Ratio (Donut) -->
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">Tỉ lệ Giới tính</div>
+                            </div>
+                            <canvas id="gender-chart" style="max-height: 250px;"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Row 3: Complaint Trends -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <div class="chart-title">Xu hướng phản ánh theo Quý</div>
+                        </div>
+                        <canvas id="complaints-chart" style="max-height: 250px;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. HOUSEHOLDS MANAGEMENT -->
+            <div id="tab-households" class="tab-content">
+                <div class="table-card">
+                    <table class="data-table" id="household-table">
+                        <thead>
+                            <tr>
+                                <th>Số Hộ Khẩu</th>
+                                <th>Chủ Hộ (Chính)</th>
+                                <th>Địa Chỉ</th>
+                                <th>Số Thành Viên</th>
+                                <th class="text-right">Tác Vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- JS Generated -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="pagination-container"></div>
+            </div>
+
+            <!-- 3. PERSONS MANAGEMENT -->
+            <div id="tab-persons" class="tab-content">
+                <div class="table-card">
+                    <table class="data-table" id="persons-table">
+                        <thead>
+                            <tr>
+                                <th>Họ và Tên</th>
+                                <th>CCCD / CMND</th>
+                                <th>Ngày Sinh</th>
+                                <th>Giới Tính</th>
+                                <th>Hộ Khẩu</th>
+                                <th>Trạng Thái</th>
+                                <th class="text-right">Tác Vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- JS Generated -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="persons-pagination-container"></div>
+            </div>
+
+            <!-- 4. TEMPORARY RESIDENCE/ABSENCE -->
+            <div id="tab-temporary" class="tab-content">
+                <!-- Sub tabs -->
+                <div style="margin-bottom: 24px; border-bottom: 1px solid #e2e8f0;">
+                    <button class="btn-primary"
+                        style="background:transparent; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding: 8px 16px; border-radius: 0;">Tạm
+                        vắng</button>
+                    <!-- Simplified sub-tab logic for now, handled in app.js switching -->
+                </div>
+
+                <div class="split-layout">
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <span class="chart-title">Danh sách Tạm vắng</span>
+                        </div>
+                        <table class="data-table" id="absent-table">
+                            <thead>
+                                <tr>
+                                    <th>Cư dân</th>
+                                    <th>Lý do</th>
+                                    <th>Thời gian</th>
+                                    <th>Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <span class="chart-title">Danh sách Tạm trú</span>
+                        </div>
+                        <table class="data-table" id="temp-res-table">
+                            <thead>
+                                <tr>
+                                    <th>Họ tên</th>
+                                    <th>Từ nơi</th>
+                                    <th>Lý do</th>
+                                    <th>Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. COMPLAINTS CENTER -->
+            <div id="tab-complaints" class="tab-content">
+                <div style="display: flex; gap: 16px; margin-bottom: 24px;">
+                    <select class="form-control" style="width: 200px;" id="complaint-category-filter"
+                        onchange="filterComplaints()">
+                        <option value="">Tất cả danh mục</option>
+                        <option value="SECURITY">An ninh & An toàn</option>
+                        <option value="HYGIENE">Vệ sinh & Môi trường</option>
+                        <option value="INFRASTRUCTURE">Cơ sở hạ tầng</option>
+                    </select>
+                    <select class="form-control" style="width: 200px;" id="complaint-status-filter"
+                        onchange="filterComplaints()">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="PENDING">Chờ xử lý</option>
+                        <option value="RESOLVED">Đã giải quyết</option>
+                    </select>
+                </div>
+
+                <div class="table-card">
+                    <table class="data-table" id="complaints-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40%">Nội dung phản ánh</th>
+                                <th>Danh mục</th>
+                                <th>Mức độ (Reports)</th>
+                                <th>Ngày tạo</th>
+                                <th>Trạng thái</th>
+                                <th class="text-right">Tác vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
