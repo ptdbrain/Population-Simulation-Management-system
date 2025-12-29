@@ -8,12 +8,14 @@
 const State = {
     user: null,
     token: null,
+    role: null, // 'admin', 'leader', or 'resident'
     currentTab: 'statistics',
     households: [],
     persons: [],
     absentRequests: [],
     tempResidences: [],
     complaints: [],
+    requests: [], // New: resident requests
     isLoading: false
 };
 
@@ -60,12 +62,17 @@ async function apiCall(endpoint, options = {}) {
 
     // Add trailing slash if endpoint is a collection route (no path params after)
     // This fixes FastAPI 404 issues for routes like /households vs /households/
-    // Note: absent-requests and temp-residences don't have trailing slash in backend
+    // Must check before query parameters
     const collectionRoutes = ['/households', '/persons', '/complaints'];
     for (const route of collectionRoutes) {
-        if (url.endsWith(route)) {
-            url += '/';
-            break;
+        const fullRoute = API_BASE + route;
+        if (url.startsWith(fullRoute)) {
+            const charAfter = url[fullRoute.length];
+            // If character after route is nothing, ?, or already /, add slash if needed
+            if (!charAfter || charAfter === '?') {
+                url = fullRoute + '/' + url.substring(fullRoute.length);
+                break;
+            }
         }
     }
 
@@ -111,6 +118,195 @@ async function apiCall(endpoint, options = {}) {
 // ==========================================
 // AUTHENTICATION
 // ==========================================
+
+// Switch between Login and Register tabs
+function switchAuthTab(tab) {
+    const loginTab = document.getElementById('login-tab');
+    const registerTab = document.getElementById('register-tab');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+
+    if (tab === 'login') {
+        loginTab.classList.add('active');
+        registerTab.classList.remove('active');
+        loginForm.style.display = 'flex';
+        registerForm.style.display = 'none';
+    } else {
+        loginTab.classList.remove('active');
+        registerTab.classList.add('active');
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'flex';
+    }
+
+    // Clear any error/success messages
+    document.getElementById('login-error').textContent = '';
+    document.getElementById('register-error').textContent = '';
+    document.getElementById('register-success').textContent = '';
+}
+
+// Toggle CCCD/Verification code fields based on role
+function toggleRoleFields() {
+    const role = document.getElementById('reg-role').value;
+    const cccdField = document.getElementById('cccd-field');
+    const verificationField = document.getElementById('verification-field');
+    const newResidentFields = document.getElementById('new-resident-fields');
+
+    if (role === 'resident') {
+        cccdField.style.display = 'block';
+        verificationField.style.display = 'none';
+        // Hide new resident fields until CCCD is checked
+        if (newResidentFields) newResidentFields.style.display = 'none';
+    } else {
+        cccdField.style.display = 'none';
+        verificationField.style.display = 'block';
+        if (newResidentFields) newResidentFields.style.display = 'none';
+    }
+
+    // Clear CCCD status
+    const statusEl = document.getElementById('cccd-status');
+    if (statusEl) statusEl.textContent = '';
+}
+
+// Check if CCCD exists in system
+async function checkCCCD() {
+    const cccd = document.getElementById('reg-cccd').value.trim();
+    const statusEl = document.getElementById('cccd-status');
+    const newResidentFields = document.getElementById('new-resident-fields');
+
+    if (!cccd || cccd.length !== 12) {
+        statusEl.textContent = '';
+        if (newResidentFields) newResidentFields.style.display = 'none';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/check-cccd', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cccd })
+        });
+
+        const data = await response.json();
+
+        if (data.exists) {
+            if (data.has_account) {
+                statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ CCCD này đã có tài khoản</span>';
+                if (newResidentFields) newResidentFields.style.display = 'none';
+            } else {
+                statusEl.innerHTML = `<span style="color: #22c55e;">✓ Tìm thấy: ${data.resident_name}</span>`;
+                if (newResidentFields) newResidentFields.style.display = 'none';
+            }
+        } else {
+            statusEl.innerHTML = '<span style="color: #3b82f6;">📝 CCCD mới - Vui lòng nhập thông tin cá nhân</span>';
+            if (newResidentFields) newResidentFields.style.display = 'block';
+        }
+    } catch (error) {
+        statusEl.textContent = '';
+        if (newResidentFields) newResidentFields.style.display = 'none';
+    }
+}
+
+// Register new user
+async function register() {
+    const username = document.getElementById('reg-username').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const role = document.getElementById('reg-role').value;
+    const cccd = document.getElementById('reg-cccd').value.trim();
+    const verificationCode = document.getElementById('reg-code').value.trim();
+
+    // New resident fields
+    const fullName = document.getElementById('reg-fullname')?.value.trim() || '';
+    const dob = document.getElementById('reg-dob')?.value || '';
+    const gender = document.getElementById('reg-gender')?.value || '';
+
+    const errorEl = document.getElementById('register-error');
+    const successEl = document.getElementById('register-success');
+
+    errorEl.textContent = '';
+    successEl.textContent = '';
+
+    // Client-side validation
+    if (!username || !password) {
+        errorEl.textContent = 'Vui lòng nhập tên đăng nhập và mật khẩu';
+        return;
+    }
+
+    if (password.length < 6) {
+        errorEl.textContent = 'Mật khẩu phải có ít nhất 6 ký tự';
+        return;
+    }
+
+    if (role === 'resident' && !cccd) {
+        errorEl.textContent = 'Vui lòng nhập số CCCD';
+        return;
+    }
+
+    if ((role === 'admin' || role === 'leader') && !verificationCode) {
+        errorEl.textContent = 'Vui lòng nhập mã xác minh';
+        return;
+    }
+
+    try {
+        showLoading();
+
+        const requestBody = {
+            username,
+            password,
+            role,
+            cccd: role === 'resident' ? cccd : null,
+            verification_code: (role === 'admin' || role === 'leader') ? verificationCode : null
+        };
+
+        // Add new resident fields if they exist
+        if (role === 'resident' && fullName) {
+            requestBody.full_name = fullName;
+            requestBody.dob = dob;
+            requestBody.gender = gender;
+        }
+
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || 'Đăng ký thất bại');
+        }
+
+        successEl.textContent = data.message;
+
+        // Clear form
+        document.getElementById('reg-username').value = '';
+        document.getElementById('reg-password').value = '';
+        document.getElementById('reg-cccd').value = '';
+        document.getElementById('reg-code').value = '';
+        if (document.getElementById('reg-fullname')) document.getElementById('reg-fullname').value = '';
+        if (document.getElementById('reg-dob')) document.getElementById('reg-dob').value = '';
+        if (document.getElementById('reg-gender')) document.getElementById('reg-gender').value = '';
+
+        const statusEl = document.getElementById('cccd-status');
+        if (statusEl) statusEl.textContent = '';
+        const newResidentFields = document.getElementById('new-resident-fields');
+        if (newResidentFields) newResidentFields.style.display = 'none';
+
+        showToast('Đăng ký thành công!', 'success');
+
+        // Switch to login tab after 2 seconds
+        setTimeout(() => {
+            switchAuthTab('login');
+        }, 2000);
+
+    } catch (error) {
+        errorEl.textContent = error.message;
+    } finally {
+        hideLoading();
+    }
+}
 
 function showLoginModal() {
     const modal = document.createElement('div');
@@ -169,21 +365,22 @@ async function handleLogin(event) {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
         });
-
         if (!response.ok) {
             throw new Error('Sai tên đăng nhập hoặc mật khẩu');
         }
 
         const data = await response.json();
 
-        // Save token
+        // Save token and role
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('username', username);
+        localStorage.setItem('role', data.role || 'resident');
 
         // Parse token to get user info
         const payload = parseJwt(data.access_token);
         State.token = data.access_token;
         State.user = { username, ...payload };
+        State.role = data.role || payload.role || 'resident';
 
         // Close modal and show dashboard
         closeModal('login-modal');
@@ -200,6 +397,7 @@ async function handleLogin(event) {
 function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    localStorage.removeItem('role');
     State.user = null;
     State.token = null;
 
@@ -245,13 +443,13 @@ function checkAuth() {
 
     State.token = token;
     State.user = { username, ...payload };
+    State.role = localStorage.getItem('role') || payload.role || 'resident';
     return true;
 }
 
 function showDashboard() {
     // Hide login overlay
     document.getElementById('auth-overlay').style.display = 'none';
-
     // Show main dashboard
     document.querySelector('.sidebar').style.display = 'flex';
     document.querySelector('.main-wrapper').style.display = 'flex';
@@ -259,66 +457,502 @@ function showDashboard() {
     // Update user info in sidebar
     updateUserDisplay();
 
-    // Load initial data (statistics tab is default)
-    switchTab('statistics');
+    // Apply role-based visibility
+    applyRoleBasedUI();
 }
 
 function updateUserDisplay() {
-    // Update sidebar user info
     if (State.user) {
         const nameEl = document.getElementById('user-display-name');
         if (nameEl) nameEl.textContent = State.user.username;
-        // Verify role mapping if needed
+
+        const roleEl = document.querySelector('.user-role');
+        if (roleEl) {
+            const roleNames = {
+                'admin': 'Quản trị viên',
+                'leader': 'Tổ trưởng',
+                'resident': 'Cư dân'
+            };
+            roleEl.textContent = roleNames[State.role] || 'Người dùng';
+        }
+
+        const avatarEl = document.querySelector('.avatar');
+        if (avatarEl && State.user.username) {
+            avatarEl.textContent = State.user.username.substring(0, 2).toUpperCase();
+        }
     }
 }
 
+function applyRoleBasedUI() {
+    const role = State.role;
+    const navItems = document.querySelectorAll('.nav-item');
+
+    // Admin/Leader tabs to hide for residents
+    const adminOnlyTabs = ['statistics', 'households', 'persons'];
+
+    navItems.forEach(item => {
+        const dataTab = item.getAttribute('data-tab') || '';
+
+        // Hide admin-only tabs for residents
+        if (adminOnlyTabs.includes(dataTab)) {
+            item.style.display = (role === 'resident') ? 'none' : 'flex';
+        }
+
+        // Show my-household only for residents
+        if (dataTab === 'my-household') {
+            item.style.display = (role === 'resident') ? 'flex' : 'none';
+        }
+    });
+
+    updateActionButtons();
+
+    // Set default tab based on role
+    if (role === 'resident') {
+        switchTab('my-household');
+    } else {
+        switchTab('statistics');
+    }
+}
+
+function updateActionButtons() {
+    const role = State.role;
+    const addBtn = document.querySelector('.header-actions .btn-primary');
+    const viewRequestsBtn = document.getElementById('btn-view-requests');
+
+    // Show/hide view requests button (leaders and admins only)
+    if (viewRequestsBtn) {
+        viewRequestsBtn.style.display = (role === 'leader' || role === 'admin') ? 'inline-flex' : 'none';
+    }
+
+    // Configure the main action button based on role
+    if (addBtn) {
+        if (role === 'resident') {
+            addBtn.innerHTML = '<span>+</span> Tạo yêu cầu';
+            addBtn.setAttribute('onclick', 'showRequestModal()');
+        } else {
+            addBtn.innerHTML = '<span>+</span> Thêm mới';
+            addBtn.setAttribute('onclick', 'showAddModal()');
+        }
+    }
+}
+
+// Admin/Leader: Show modal to select what to add
+function showAddModal() {
+    showModal('Chọn loại thêm mới', `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <button class="btn-add" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px;" onclick="closeModal(); addHousehold();">
+                <span style="font-size: 28px;">🏠</span>
+                <span>Thêm hộ khẩu</span>
+            </button>
+            <button class="btn-add" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px;" onclick="closeModal(); addPerson();">
+                <span style="font-size: 28px;">👤</span>
+                <span>Thêm nhân khẩu</span>
+            </button>
+            <button class="btn-add" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px;" onclick="closeModal(); addTempResidence();">
+                <span style="font-size: 28px;">📋</span>
+                <span>Thêm tạm trú</span>
+            </button>
+            <button class="btn-add" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px;" onclick="closeModal(); addAbsentRequest();">
+                <span style="font-size: 28px;">🚶</span>
+                <span>Thêm tạm vắng</span>
+            </button>
+            <button class="btn-add" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);" onclick="closeModal(); showSplitHouseholdForm();">
+                <span style="font-size: 28px;">✂️</span>
+                <span>Tách hộ khẩu</span>
+            </button>
+        </div>
+        <div class="modal-footer" style="margin-top: 20px;">
+            <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
+        </div>
+    `);
+}
+
 // ==========================================
-// TAB SWITCHING
+// REQUEST SYSTEM (Role-based)
 // ==========================================
+
+// For Residents: Create a new request
+function showRequestModal() {
+    // Pre-load households for forms that need them
+    if (!State.households || State.households.length === 0) {
+        loadHouseholds();
+    }
+
+    showModal('Tạo yêu cầu mới', `
+        <form id="create-request-form" onsubmit="handleCreateRequest(event)">
+            <div class="form-group">
+                <label for="request-type">Loại yêu cầu *</label>
+                <select id="request-type" required onchange="toggleRequestFields()">
+                    <option value="">-- Chọn loại --</option>
+                    <option value="SPLIT_HOUSEHOLD">Yêu cầu tách khẩu</option>
+                    <option value="JOIN_HOUSEHOLD">Yêu cầu nhập khẩu</option>
+                    <option value="NEW_HOUSEHOLD">Yêu cầu tạo hộ khẩu mới</option>
+                    <option value="PERSON_UPDATE">Cập nhật thông tin cá nhân</option>
+                    <option value="OTHER">Yêu cầu khác</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="request-title">Tiêu đề *</label>
+                <input type="text" id="request-title" required placeholder="Nhập tiêu đề yêu cầu">
+            </div>
+            
+            <!-- Dynamic fields for SPLIT_HOUSEHOLD -->
+            <div id="split-fields" class="dynamic-fields" style="display: none;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px 0; color: #475569;">📋 Thông tin tách khẩu</h4>
+                    <div class="form-group">
+                        <label>Địa chỉ hộ khẩu mới *</label>
+                        <input type="text" id="req-new-address" class="form-control" placeholder="Nhập địa chỉ hộ khẩu mới" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Mã hộ khẩu mới (đề xuất)</label>
+                        <input type="text" id="req-new-code" class="form-control" placeholder="VD: HK-2024-001">
+                        <small style="color: #64748b;">Để trống nếu muốn hệ thống tự tạo</small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dynamic fields for JOIN_HOUSEHOLD -->
+            <div id="join-fields" class="dynamic-fields" style="display: none;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px 0; color: #475569;">📋 Thông tin nhập khẩu</h4>
+                    <div class="form-group">
+                        <label>Mã hộ khẩu muốn nhập vào *</label>
+                        <input type="text" id="req-target-hh-code" class="form-control" placeholder="Nhập mã hộ khẩu đích" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Quan hệ với chủ hộ *</label>
+                        <select id="req-relation" class="form-control">
+                            <option value="MEMBER">Thành viên</option>
+                            <option value="WIFE">Vợ</option>
+                            <option value="HUSBAND">Chồng</option>
+                            <option value="SON">Con trai</option>
+                            <option value="DAUGHTER">Con gái</option>
+                            <option value="PARENT">Bố/Mẹ</option>
+                            <option value="GRANDPARENT">Ông/Bà</option>
+                            <option value="SIBLING">Anh/Chị/Em</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dynamic fields for NEW_HOUSEHOLD -->
+            <div id="new-hh-fields" class="dynamic-fields" style="display: none;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px 0; color: #475569;">📋 Thông tin hộ khẩu mới</h4>
+                    <div class="form-group">
+                        <label>Địa chỉ hộ khẩu mới *</label>
+                        <input type="text" id="req-new-hh-address" class="form-control" placeholder="Nhập địa chỉ đầy đủ" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Mã hộ khẩu mới (đề xuất)</label>
+                        <input type="text" id="req-new-hh-code" class="form-control" placeholder="VD: HK-2024-001">
+                        <small style="color: #64748b;">Để trống nếu muốn hệ thống tự tạo</small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dynamic fields for PERSON_UPDATE -->
+            <div id="person-update-fields" class="dynamic-fields" style="display: none;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px 0; color: #475569;">📋 Thông tin cần cập nhật</h4>
+                    <div class="form-group">
+                        <label>Họ và tên mới</label>
+                        <input type="text" id="req-new-name" class="form-control" placeholder="Để trống nếu không đổi">
+                    </div>
+                    <div class="form-group">
+                        <label>Ngày sinh mới</label>
+                        <input type="date" id="req-new-dob" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Giới tính</label>
+                        <select id="req-new-gender" class="form-control">
+                            <option value="">-- Không thay đổi --</option>
+                            <option value="MALE">Nam</option>
+                            <option value="FEMALE">Nữ</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Số CCCD mới</label>
+                        <input type="text" id="req-new-cid" class="form-control" placeholder="Số CCCD 12 số">
+                    </div>
+                </div>
+            </div>
+            
+
+            <div class="form-group">
+                <label for="request-content">Lý do / Ghi chú thêm *</label>
+                <textarea id="request-content" rows="3" required placeholder="Mô tả lý do và các thông tin bổ sung nếu có..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+                <button type="submit" class="btn-add">Gửi yêu cầu</button>
+            </div>
+        </form>
+    `);
+}
+
+function toggleRequestFields() {
+    const type = document.getElementById('request-type').value;
+
+    // Hide all dynamic fields first
+    document.querySelectorAll('.dynamic-fields').forEach(el => {
+        el.style.display = 'none';
+        // Remove required from hidden fields
+        el.querySelectorAll('input, select, textarea').forEach(input => {
+            input.removeAttribute('data-was-required');
+            if (input.hasAttribute('required')) {
+                input.setAttribute('data-was-required', 'true');
+                input.removeAttribute('required');
+            }
+        });
+    });
+
+    // Show relevant fields and restore required
+    let targetFields = null;
+    if (type === 'SPLIT_HOUSEHOLD') {
+        targetFields = document.getElementById('split-fields');
+    } else if (type === 'JOIN_HOUSEHOLD') {
+        targetFields = document.getElementById('join-fields');
+    } else if (type === 'NEW_HOUSEHOLD') {
+        targetFields = document.getElementById('new-hh-fields');
+    } else if (type === 'PERSON_UPDATE') {
+        targetFields = document.getElementById('person-update-fields');
+    }
+
+    if (targetFields) {
+        targetFields.style.display = 'block';
+        // Restore required attributes
+        targetFields.querySelectorAll('[data-was-required="true"]').forEach(input => {
+            input.setAttribute('required', '');
+        });
+    }
+}
+
+async function handleCreateRequest(event) {
+    event.preventDefault();
+
+    const requestType = document.getElementById('request-type').value;
+    const title = document.getElementById('request-title').value;
+    const description = document.getElementById('request-content').value;
+
+    // Build request_data based on request type
+    let requestData = {};
+
+    if (requestType === 'SPLIT_HOUSEHOLD') {
+        const newAddress = document.getElementById('req-new-address').value;
+        const newCode = document.getElementById('req-new-code').value;
+        requestData = {
+            new_address: newAddress,
+            new_household_code: newCode || `HK-${Date.now()}`
+        };
+    } else if (requestType === 'JOIN_HOUSEHOLD') {
+        const targetCode = document.getElementById('req-target-hh-code').value;
+        const relation = document.getElementById('req-relation').value;
+        const targetHH = State.households.find(h => h.household_code === targetCode);
+        requestData = {
+            target_household_code: targetCode,
+            target_household_id: targetHH ? targetHH.id : null,
+            relation_to_owner: relation
+        };
+    } else if (requestType === 'NEW_HOUSEHOLD') {
+        const newAddress = document.getElementById('req-new-hh-address').value;
+        const newCode = document.getElementById('req-new-hh-code').value;
+        requestData = {
+            address: newAddress,
+            household_code: newCode || `HK-${Date.now()}`
+        };
+    } else if (requestType === 'PERSON_UPDATE') {
+        const newName = document.getElementById('req-new-name').value;
+        const newDob = document.getElementById('req-new-dob').value;
+        const newGender = document.getElementById('req-new-gender').value;
+        const newCid = document.getElementById('req-new-cid').value;
+        requestData = {};
+        if (newName) requestData.full_name = newName;
+        if (newDob) requestData.dob = newDob;
+        if (newGender) requestData.gender = newGender;
+        if (newCid) requestData.cid = newCid;
+    }
+
+    const formData = {
+        request_type: requestType,
+        title: title,
+        description: description,
+        request_data: JSON.stringify(requestData)
+    };
+
+    try {
+        showLoading();
+        const result = await apiCall('/requests/', {
+            method: 'POST',
+            body: JSON.stringify(formData)
+        });
+
+        if (result) {
+            showToast('Đã gửi yêu cầu thành công! Vui lòng chờ duyệt.', 'success');
+            closeModal();
+            if (State.currentTab === 'my-household') {
+                loadMyRequests();
+            }
+        }
+    } catch (error) {
+        console.error('Error creating request:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+// For Leaders/Admins: View and process pending requests
+async function showPendingRequests() {
+    try {
+        showLoading();
+        const requests = await apiCall('/requests/?status_filter=PENDING');
+
+        if (!requests || requests.length === 0) {
+            showModal('Yêu cầu chờ duyệt', `
+                <div style="text-align: center; padding: 40px;">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Không có yêu cầu nào đang chờ duyệt</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
+                </div>
+            `);
+            return;
+        }
+
+        const requestTypeLabels = {
+            'NEW_HOUSEHOLD': 'Tạo hộ khẩu mới',
+            'JOIN_HOUSEHOLD': 'Nhập khẩu',
+            'SPLIT_HOUSEHOLD': 'Tách khẩu',
+            'HOUSEHOLD_UPDATE': 'Thay đổi HK',
+            'PERSON_UPDATE': 'Cập nhật TT',
+            'TEMP_RESIDENCE': 'Tạm trú',
+            'TEMP_ABSENCE': 'Tạm vắng',
+            'OTHER': 'Khác'
+        };
+
+        const requestsHtml = requests.map(req => `
+            <div class="request-item" style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                    <div>
+                        <span class="badge badge-info">${requestTypeLabels[req.request_type] || req.request_type}</span>
+                        <strong style="margin-left: 8px;">${req.title}</strong>
+                    </div>
+                    <span style="color: #64748b; font-size: 12px;">${formatDate(req.created_at)}</span>
+                </div>
+                <p style="color: #475569; margin-bottom: 8px;">${req.description || ''}</p>
+                <p style="color: #94a3b8; font-size: 12px; margin-bottom: 12px;">Người gửi: ${req.requester_name || 'N/A'}</p>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn-add" style="padding: 6px 12px; font-size: 12px;" onclick="approveRequest(${req.id})">
+                        ✓ Duyệt
+                    </button>
+                    <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px; color: #ef4444;" onclick="rejectRequest(${req.id})">
+                        ✗ Từ chối
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        showModal('Yêu cầu chờ duyệt (' + requests.length + ')', `
+            <div style="max-height: 400px; overflow-y: auto;">
+                ${requestsHtml}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
+            </div>
+        `);
+    } catch (error) {
+        console.error('Error loading requests:', error);
+        showToast('Không thể tải danh sách yêu cầu', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function approveRequest(id) {
+    if (!confirm('Bạn có chắc chắn muốn duyệt yêu cầu này?')) {
+        return;
+    }
+
+    try {
+        showLoading();
+        await apiCall(`/requests/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'APPROVED' })
+        });
+        showToast('Đã duyệt yêu cầu', 'success');
+        closeModal();
+        showPendingRequests(); // Refresh the list
+    } catch (error) {
+        console.error('Error approving request:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function rejectRequest(id) {
+    const reason = prompt('Nhập lý do từ chối:');
+    if (!reason) return;
+
+    try {
+        showLoading();
+        await apiCall(`/requests/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'REJECTED', approval_note: reason })
+        });
+        showToast('Đã từ chối yêu cầu', 'success');
+        closeModal();
+        showPendingRequests(); // Refresh the list
+    } catch (error) {
+        console.error('Error rejecting request:', error);
+    } finally {
+        hideLoading();
+    }
+}
 
 // ==========================================
 // TAB SWITCHING
 // ==========================================
 
 function switchTab(tabName) {
-    // Remove active class from all sidebar items
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
-        // Simple check if this item corresponds to the clicked tab
-        if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(`'${tabName}'`)) {
+        // Use data-tab attribute for matching
+        if (item.getAttribute('data-tab') === tabName) {
             item.classList.add('active');
         }
     });
 
-    // Hide all tab contents
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
 
-    // Show corresponding content
     const content = document.getElementById('tab-' + tabName);
     if (content) {
         content.classList.add('active');
         State.currentTab = tabName;
 
-        // Update Page Title
-        const requestTitle = {
+        const pageTitles = {
             'statistics': 'Tổng quan Tổ dân phố',
             'households': 'Quản lý Hộ khẩu',
             'persons': 'Quản lý Nhân khẩu',
+            'my-household': 'Hộ khẩu của tôi',
             'temporary': 'Quản lý Tạm trú / Tạm vắng',
             'complaints': 'Phản ánh & Kiến nghị'
         };
-        document.getElementById('page-title').textContent = requestTitle[tabName] || 'Dashboard';
+        document.getElementById('page-title').textContent = pageTitles[tabName] || 'Dashboard';
     }
 
-    // Load data for the tab
     if (tabName === 'households') {
         loadHouseholds();
     } else if (tabName === 'persons') {
         loadPersons();
+    } else if (tabName === 'my-household') {
+        loadMyHouseholdData();
     } else if (tabName === 'temporary') {
         loadAbsentRequests();
+        loadTempResidences();
     } else if (tabName === 'complaints') {
         loadComplaints();
     } else if (tabName === 'statistics') {
@@ -327,17 +961,428 @@ function switchTab(tabName) {
 }
 
 // ==========================================
+// MY HOUSEHOLD (Resident Self-Service)
+// ==========================================
+
+async function loadMyHouseholdData() {
+    try {
+        showLoading();
+        // Load all data in parallel
+        await Promise.all([
+            loadMyProfile(),
+            loadMyHousehold(),
+            loadMyFamily(),
+            loadMyRequests()
+        ]);
+    } catch (error) {
+        console.error('Error loading my household data:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadMyProfile() {
+    try {
+        const profile = await apiCall('/my/profile');
+        if (profile) {
+            document.getElementById('my-profile-name').textContent = profile.full_name;
+            document.getElementById('my-profile-details').textContent =
+                `CCCD: ${profile.cid} | Ngày sinh: ${formatDate(profile.dob)} | ${profile.gender === 'MALE' ? 'Nam' : 'Nữ'} `;
+        }
+    } catch (error) {
+        document.getElementById('my-profile-name').textContent = 'Chưa liên kết';
+        document.getElementById('my-profile-details').textContent = 'Bạn chưa được liên kết với nhân khẩu';
+    }
+}
+
+async function loadMyHousehold() {
+    try {
+        const household = await apiCall('/my/household');
+        if (household) {
+            document.getElementById('my-household-code').textContent = household.household_code;
+            document.getElementById('my-household-address').textContent =
+                `Địa chỉ: ${household.address} | Chủ hộ: ${household.owner_name || 'Chưa có'} | ${household.member_count} thành viên`;
+        }
+    } catch (error) {
+        document.getElementById('my-household-code').textContent = '-';
+        document.getElementById('my-household-address').textContent = 'Chưa thuộc hộ khẩu nào';
+    }
+}
+
+async function loadMyFamily() {
+    try {
+        const family = await apiCall('/my/family');
+        renderMyFamilyTable(family || []);
+    } catch (error) {
+        renderMyFamilyTable([]);
+    }
+}
+
+function renderMyFamilyTable(members) {
+    const tbody = document.querySelector('#my-family-table tbody');
+    if (!tbody) return;
+
+    if (!members || members.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 40px; color: #64748b;">
+                    <div style="font-size: 48px; margin-bottom: 8px;">👨‍👩‍👧</div>
+                    <p>Chưa có thông tin thành viên</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const genderLabels = { 'MALE': 'Nam', 'FEMALE': 'Nữ' };
+    const statusLabels = {
+        'PERMANENT': 'Thường trú',
+        'TEMPORARY': 'Tạm trú',
+        'ABSENT': 'Tạm vắng'
+    };
+    const statusClasses = {
+        'PERMANENT': 'badge-success',
+        'TEMPORARY': 'badge-info',
+        'ABSENT': 'badge-warning'
+    };
+
+    tbody.innerHTML = members.map(m => `
+        <tr>
+            <td><strong>${m.full_name}</strong></td>
+            <td>${m.cid}</td>
+            <td>${formatDate(m.dob)}</td>
+            <td>${genderLabels[m.gender] || m.gender}</td>
+            <td>${m.relation_to_owner}</td>
+            <td><span class="badge ${statusClasses[m.status] || 'badge-secondary'}">${statusLabels[m.status] || m.status}</span></td>
+        </tr>
+    `).join('');
+}
+
+async function loadMyRequests() {
+    try {
+        const requests = await apiCall('/my/requests');
+        renderMyRequestsTable(requests || []);
+    } catch (error) {
+        renderMyRequestsTable([]);
+    }
+}
+
+function renderMyRequestsTable(requests) {
+    const tbody = document.querySelector('#my-requests-table tbody');
+    if (!tbody) return;
+
+    if (!requests || requests.length === 0) {
+        tbody.innerHTML = `
+            < tr >
+            <td colspan="5" style="text-align: center; padding: 40px; color: #64748b;">
+                <div style="font-size: 48px; margin-bottom: 8px;">📝</div>
+                <p>Bạn chưa có yêu cầu nào</p>
+                <button class="btn-primary" onclick="showRequestModal()" style="margin-top: 12px;">+ Tạo yêu cầu mới</button>
+            </td>
+            </tr >
+            `;
+        return;
+    }
+
+    const typeLabels = {
+        'NEW_HOUSEHOLD': 'Tạo HK mới',
+        'JOIN_HOUSEHOLD': 'Nhập khẩu',
+        'SPLIT_HOUSEHOLD': 'Tách khẩu',
+        'PERSON_UPDATE': 'Cập nhật TT',
+        'TEMP_RESIDENCE': 'Tạm trú',
+        'TEMP_ABSENCE': 'Tạm vắng',
+        'OTHER': 'Khác'
+    };
+
+    const statusLabels = {
+        'PENDING': 'Chờ duyệt',
+        'APPROVED': 'Đã duyệt',
+        'REJECTED': 'Từ chối'
+    };
+    const statusClasses = {
+        'PENDING': 'badge-warning',
+        'APPROVED': 'badge-success',
+        'REJECTED': 'badge-danger'
+    };
+
+    tbody.innerHTML = requests.map(r => `
+            < tr >
+            <td><span class="badge badge-info">${typeLabels[r.request_type] || r.request_type}</span></td>
+            <td><strong>${r.title}</strong></td>
+            <td>${formatDate(r.created_at)}</td>
+            <td><span class="badge ${statusClasses[r.status] || 'badge-secondary'}">${statusLabels[r.status] || r.status}</span></td>
+            <td style="color: ${r.status === 'REJECTED' ? '#ef4444' : '#64748b'};">${r.admin_note || '-'}</td>
+        </tr >
+            `).join('');
+}
+
+// ==========================================
+// TEMPORARY RESIDENCE/ABSENCE MANAGEMENT
+// ==========================================
+
+async function loadAbsentRequests() {
+    try {
+        showLoading();
+        const data = await apiCall('/absent-requests');
+        if (data) {
+            State.absentRequests = data;
+            renderAbsentTable(data);
+        }
+    } catch (error) {
+        console.error('Error loading absent requests:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderAbsentTable(requests) {
+    const tableBody = document.querySelector('#absent-table tbody');
+    if (!tableBody) return;
+
+    if (!requests || requests.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">Không có dữ liệu tạm vắng</td></tr>';
+        return;
+    }
+
+    const statusLabels = {
+        'PENDING': 'Chờ duyệt',
+        'APPROVED': 'Đã duyệt',
+        'REJECTED': 'Từ chối'
+    };
+    const statusClasses = {
+        'PENDING': 'badge-warning',
+        'APPROVED': 'badge-success',
+        'REJECTED': 'badge-danger'
+    };
+
+    tableBody.innerHTML = requests.map(r => `
+        <tr>
+            <td>${r.resident_name || 'Cư dân #' + r.resident_id}</td>
+            <td>${r.reason || '-'}</td>
+            <td>${formatDate(r.start_date)} - ${formatDate(r.end_date)}</td>
+            <td>
+                <span class="badge ${statusClasses[r.status] || 'badge-secondary'}">${statusLabels[r.status] || r.status}</span>
+                ${r.status === 'PENDING' && (State.role === 'leader' || State.role === 'admin') ?
+            `<button class="btn-action" style="margin-left: 8px;" onclick="approveAbsentRequest(${r.id})">✓</button>` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function loadTempResidences() {
+    try {
+        showLoading();
+        const data = await apiCall('/temp-residences');
+        if (data) {
+            State.tempResidences = data;
+            renderTempResidenceTable(data);
+        }
+    } catch (error) {
+        console.error('Error loading temp residences:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderTempResidenceTable(registrations) {
+    const tableBody = document.querySelector('#temp-res-table tbody');
+    if (!tableBody) return;
+
+    if (!registrations || registrations.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">Không có dữ liệu tạm trú</td></tr>';
+        return;
+    }
+
+    const statusLabels = {
+        'PENDING': 'Chờ duyệt',
+        'APPROVED': 'Đã duyệt',
+        'REJECTED': 'Từ chối'
+    };
+    const statusClasses = {
+        'PENDING': 'badge-warning',
+        'APPROVED': 'badge-success',
+        'REJECTED': 'badge-danger'
+    };
+
+    tableBody.innerHTML = registrations.map(r => `
+        <tr>
+            <td>${r.full_name}</td>
+            <td>${r.origin_address || '-'}</td>
+            <td>${r.reason || '-'}</td>
+            <td>
+                <span class="badge ${statusClasses[r.status] || 'badge-secondary'}">${statusLabels[r.status] || r.status}</span>
+                ${r.status === 'PENDING' && (State.role === 'leader' || State.role === 'admin') ?
+            `<button class="btn-action" style="margin-left: 8px;" onclick="approveTempResidence(${r.id})">✓</button>` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function approveAbsentRequest(id) {
+    if (!confirm('Duyệt yêu cầu tạm vắng này?')) return;
+    try {
+        showLoading();
+        await apiCall(`/absent-requests/${id}/approve`, { method: 'POST' });
+        showToast('Đã duyệt yêu cầu tạm vắng', 'success');
+        loadAbsentRequests();
+    } catch (error) {
+        console.error('Error approving absent request:', error);
+        showToast('Lỗi khi duyệt yêu cầu', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function approveTempResidence(id) {
+    if (!confirm('Duyệt đăng ký tạm trú này?')) return;
+    try {
+        showLoading();
+        await apiCall(`/temp-residences/${id}/approve`, { method: 'POST' });
+        showToast('Đã duyệt đăng ký tạm trú', 'success');
+        loadTempResidences();
+    } catch (error) {
+        console.error('Error approving temp residence:', error);
+        showToast('Lỗi khi duyệt đăng ký', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function addAbsentRequest() {
+    const formHtml = `
+        <form id="add-absent-form" onsubmit="handleAddAbsent(event)">
+            <div class="form-group">
+                <label>Cư dân (ID)</label>
+                <input type="number" id="absent-resident-id" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ngày bắt đầu</label>
+                <input type="date" id="absent-start-date" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ngày kết thúc</label>
+                <input type="date" id="absent-end-date" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Lý do</label>
+                <input type="text" id="absent-reason" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Nơi đến</label>
+                <input type="text" id="absent-destination" class="form-control" required>
+            </div>
+            <button type="submit" class="btn-add" style="width: 100%; margin-top: 16px;">Đăng ký tạm vắng</button>
+        </form>
+    `;
+    showModal('Đăng ký Tạm vắng', formHtml);
+}
+
+async function handleAddAbsent(event) {
+    event.preventDefault();
+    try {
+        showLoading();
+        await apiCall('/absent-requests', {
+            method: 'POST',
+            body: JSON.stringify({
+                resident_id: parseInt(document.getElementById('absent-resident-id').value),
+                start_date: document.getElementById('absent-start-date').value,
+                end_date: document.getElementById('absent-end-date').value,
+                reason: document.getElementById('absent-reason').value,
+                destination: document.getElementById('absent-destination').value
+            })
+        });
+        showToast('Đã đăng ký tạm vắng thành công', 'success');
+        closeModal();
+        loadAbsentRequests();
+    } catch (error) {
+        console.error('Error adding absent request:', error);
+        showToast('Lỗi khi đăng ký tạm vắng', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function addTempResidence() {
+    const formHtml = `
+        <form id="add-temp-res-form" onsubmit="handleAddTempRes(event)">
+            <div class="form-group">
+                <label>Họ và tên</label>
+                <input type="text" id="temp-res-name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ngày sinh</label>
+                <input type="date" id="temp-res-dob" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Địa chỉ gốc</label>
+                <input type="text" id="temp-res-origin" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Hộ khẩu tiếp nhận (ID)</label>
+                <input type="number" id="temp-res-host-id" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ngày bắt đầu</label>
+                <input type="date" id="temp-res-start" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ngày kết thúc</label>
+                <input type="date" id="temp-res-end" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Lý do</label>
+                <input type="text" id="temp-res-reason" class="form-control" required>
+            </div>
+            <button type="submit" class="btn-add" style="width: 100%; margin-top: 16px;">Đăng ký tạm trú</button>
+        </form>
+    `;
+    showModal('Đăng ký Tạm trú', formHtml);
+}
+
+async function handleAddTempRes(event) {
+    event.preventDefault();
+    try {
+        showLoading();
+        await apiCall('/temp-residences', {
+            method: 'POST',
+            body: JSON.stringify({
+                full_name: document.getElementById('temp-res-name').value,
+                dob: document.getElementById('temp-res-dob').value,
+                origin_address: document.getElementById('temp-res-origin').value,
+                host_household_id: parseInt(document.getElementById('temp-res-host-id').value),
+                start_date: document.getElementById('temp-res-start').value,
+                end_date: document.getElementById('temp-res-end').value,
+                reason: document.getElementById('temp-res-reason').value
+            })
+        });
+        showToast('Đã đăng ký tạm trú thành công', 'success');
+        closeModal();
+        loadTempResidences();
+    } catch (error) {
+        console.error('Error adding temp residence:', error);
+        showToast('Lỗi khi đăng ký tạm trú', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// ==========================================
 // HOUSEHOLDS MANAGEMENT
 // ==========================================
+
 
 async function loadHouseholds() {
     try {
         showLoading();
-        const data = await apiCall('/households');
+        const response = await apiCall(`/households/?page=${Pagination.currentPage}&limit=${Pagination.itemsPerPage}`);
 
-        if (data) {
-            State.households = data;
-            updatePagination(data.length);
+        if (response && response.items) {
+            State.households = response.items;  // Store current page items
+            Pagination.totalItems = response.total;
+            Pagination.currentPage = response.page;
+
+            renderHouseholdsTable(response.items);
+            renderPagination();
         }
     } catch (error) {
         console.error('Error loading households:', error);
@@ -369,6 +1414,7 @@ function renderHouseholdsTable(households) {
             <td class="text-center">${h.resident_count || 0}</td>
             <td class="text-right">
                 <div class="action-icons">
+                    <button class="action-btn" onclick="viewHouseholdHistory(${h.id})" title="Lịch sử thay đổi">📜</button>
                     <button class="action-btn" onclick="editHousehold(${h.id})" title="Chỉnh sửa">✏️</button>
                     <button class="action-btn btn-text-delete" onclick="deleteHousehold(${h.id}, '${h.household_code}')" title="Xóa">🗑️</button>
                 </div>
@@ -404,19 +1450,19 @@ function addHousehold() {
         <form id="add-household-form" onsubmit="handleAddHousehold(event)">
             <div class="form-group">
                 <label for="household-code">Số hộ khẩu *</label>
-                <input type="text" id="household-code" name="household_code" required>
+                <input type="text" id="household-code" name="household_code" class="form-control" required placeholder="VD: HK001">
             </div>
             <div class="form-group">
                 <label for="household-address">Địa chỉ *</label>
-                <input type="text" id="household-address" name="address" required>
+                <input type="text" id="household-address" name="address" class="form-control" required placeholder="Nhập địa chỉ đầy đủ">
             </div>
             <div class="form-group">
-                <label for="owner-id">ID chủ hộ (optional)</label>
-                <input type="number" id="owner-id" name="owner_id">
+                <label for="owner-id">ID chủ hộ (tùy chọn)</label>
+                <input type="number" id="owner-id" name="owner_id" class="form-control" placeholder="ID nhân khẩu sẽ làm chủ hộ">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Thêm</button>
+                <button type="submit" class="btn-primary">Thêm hộ khẩu</button>
             </div>
         </form>
     `);
@@ -451,7 +1497,6 @@ async function handleAddHousehold(event) {
 }
 
 async function editHousehold(id) {
-    // Find household data
     const household = State.households.find(h => h.id === id);
     if (!household) {
         showToast('Không tìm thấy hộ khẩu', 'error');
@@ -462,19 +1507,19 @@ async function editHousehold(id) {
         <form id="edit-household-form" onsubmit="handleEditHousehold(event, ${id})">
             <div class="form-group">
                 <label for="edit-household-code">Số hộ khẩu *</label>
-                <input type="text" id="edit-household-code" name="household_code" value="${household.household_code || ''}" required>
+                <input type="text" id="edit-household-code" name="household_code" class="form-control" value="${household.household_code || ''}" required>
             </div>
             <div class="form-group">
                 <label for="edit-household-address">Địa chỉ *</label>
-                <input type="text" id="edit-household-address" name="address" value="${household.address || ''}" required>
+                <input type="text" id="edit-household-address" name="address" class="form-control" value="${household.address || ''}" required>
             </div>
             <div class="form-group">
-                <label for="edit-owner-id">ID chủ hộ (optional)</label>
-                <input type="number" id="edit-owner-id" name="owner_id" value="${household.owner_id || ''}">
+                <label for="edit-owner-id">ID chủ hộ (tùy chọn)</label>
+                <input type="number" id="edit-owner-id" name="owner_id" class="form-control" value="${household.owner_id || ''}">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Lưu</button>
+                <button type="submit" class="btn-primary">Lưu thay đổi</button>
             </div>
         </form>
     `);
@@ -533,46 +1578,38 @@ function showSplitHouseholdForm() {
     showModal('Tách hộ khẩu', `
         <form id="split-household-form" onsubmit="handleSplitHousehold(event)">
             <div class="form-group">
-                <label for="split-old-household">ID hộ khẩu cũ *</label>
-                <select id="split-old-household" required onchange="updateResidentsList()">
+                <label for="split-old-household">Hộ khẩu cũ *</label>
+                <select id="split-old-household" class="form-control" required onchange="updateResidentsList()">
                     <option value="">-- Chọn hộ khẩu --</option>
                     ${State.households.map(h => `
                         <option value="${h.id}">${h.household_code} - ${h.address}</option>
                     `).join('')}
                 </select>
             </div>
-            
             <div class="form-group">
                 <label for="split-new-owner">ID chủ hộ mới *</label>
-                <input type="number" id="split-new-owner" name="new_owner_id" required>
-                <small class="text-muted">ID của người sẽ làm chủ hộ mới</small>
+                <input type="number" id="split-new-owner" name="new_owner_id" class="form-control" required placeholder="ID người làm chủ hộ mới">
             </div>
-            
             <div class="form-group">
-                <label for="split-moving-ids">ID các thành viên chuyển đi *</label>
-                <input type="text" id="split-moving-ids" name="moving_resident_ids" required placeholder="VD: 1,2,3">
+                <label for="split-moving-ids">ID thành viên chuyển đi *</label>
+                <input type="text" id="split-moving-ids" name="moving_resident_ids" class="form-control" required placeholder="VD: 1, 2, 3">
                 <small class="text-muted">Nhập các ID cách nhau bởi dấu phẩy</small>
             </div>
-            
             <div class="form-group">
                 <label for="split-new-code">Số hộ khẩu mới *</label>
-                <input type="text" id="split-new-code" name="new_household_code" required>
+                <input type="text" id="split-new-code" name="new_household_code" class="form-control" required placeholder="VD: HK002">
             </div>
-            
             <div class="form-group">
                 <label for="split-new-address">Địa chỉ mới *</label>
-                <input type="text" id="split-new-address" name="new_address" required>
+                <input type="text" id="split-new-address" name="new_address" class="form-control" required placeholder="Địa chỉ hộ khẩu mới">
             </div>
-            
             <div class="form-group">
                 <label for="split-replacement-id">ID chủ hộ thay thế (nếu cần)</label>
-                <input type="number" id="split-replacement-id" name="replacement_owner_id">
-                <small class="text-muted">Chỉ cần nếu chủ hộ cũ chuyển đi</small>
+                <input type="number" id="split-replacement-id" name="replacement_owner_id" class="form-control" placeholder="Chỉ cần nếu chủ hộ cũ chuyển đi">
             </div>
-            
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Thực hiện tách hộ</button>
+                <button type="submit" class="btn-primary">Thực hiện tách hộ</button>
             </div>
         </form>
     `);
@@ -640,9 +1677,7 @@ function renderPagination() {
 
     // Previous button
     paginationHTML += `
-        <button class="pagination-btn" 
-                onclick="changePage(${Pagination.currentPage - 1})"
-                ${Pagination.currentPage === 1 ? 'disabled' : ''}>
+        <button class="pagination-btn" onclick="changePage(${Pagination.currentPage - 1})" ${Pagination.currentPage === 1 ? 'disabled' : ''}>
             ‹ Trước
         </button>
     `;
@@ -651,8 +1686,7 @@ function renderPagination() {
     for (let i = 1; i <= totalPages; i++) {
         if (i === 1 || i === totalPages || (i >= Pagination.currentPage - 1 && i <= Pagination.currentPage + 1)) {
             paginationHTML += `
-                <button class="pagination-btn ${i === Pagination.currentPage ? 'active' : ''}"
-                        onclick="changePage(${i})">
+                <button class="pagination-btn ${i === Pagination.currentPage ? 'active' : ''}" onclick="changePage(${i})">
                     ${i}
                 </button>
             `;
@@ -663,9 +1697,7 @@ function renderPagination() {
 
     // Next button
     paginationHTML += `
-        <button class="pagination-btn" 
-                onclick="changePage(${Pagination.currentPage + 1})"
-                ${Pagination.currentPage === totalPages ? 'disabled' : ''}>
+        <button class="pagination-btn" onclick="changePage(${Pagination.currentPage + 1})" ${Pagination.currentPage === totalPages ? 'disabled' : ''}>
             Sau ›
         </button>
     `;
@@ -681,22 +1713,19 @@ function changePage(page) {
     if (page < 1 || page > totalPages) return;
 
     Pagination.currentPage = page;
-    renderCurrentPage();
+    loadHouseholds();  // Fetch new page from server
 }
 
 function renderCurrentPage() {
-    const start = (Pagination.currentPage - 1) * Pagination.itemsPerPage;
-    const end = start + Pagination.itemsPerPage;
-    const pageData = State.households.slice(start, end);
-
-    renderHouseholdsTable(pageData);
-    renderPagination();
+    // This function is no longer needed for server-side pagination
+    // Keeping for backwards compatibility but calls loadHouseholds
+    loadHouseholds();
 }
 
 function updatePagination(totalItems) {
     Pagination.totalItems = totalItems;
     Pagination.currentPage = 1;
-    renderCurrentPage();
+    renderPagination();
 }
 
 // ==========================================
@@ -712,12 +1741,29 @@ const PersonsPagination = {
 async function loadPersons() {
     try {
         showLoading();
-        const data = await apiCall('/persons');
 
-        if (data) {
-            State.persons = data;
-            updatePersonsPagination(data.length);
+        // Load households first if not already loaded (needed for filter dropdown)
+        if (!State.households || State.households.length === 0) {
+            try {
+                const householdsResponse = await apiCall('/households/?page=1&limit=1000');
+                if (householdsResponse && householdsResponse.items) {
+                    State.households = householdsResponse.items;
+                }
+            } catch (e) {
+                console.log('Could not load households for filter:', e);
+            }
+        }
+
+        const response = await apiCall(`/persons/?page=${PersonsPagination.currentPage}&limit=${PersonsPagination.itemsPerPage}`);
+
+        if (response && response.items) {
+            State.persons = response.items;  // Store current page items
+            PersonsPagination.totalItems = response.total;
+            PersonsPagination.currentPage = response.page;
+
             populateHouseholdFilter();
+            renderPersonsTable(response.items);
+            renderPersonsPagination(response.items);
         }
     } catch (error) {
         console.error('Error loading persons:', error);
@@ -762,21 +1808,21 @@ function renderPersonsTable(persons) {
         }[p.status] || '<span class="badge badge-neutral">Khác</span>';
 
         return `
-        <tr>
-            <td><strong>${p.full_name || ''}</strong></td>
-            <td>${p.cid || ''}</td>
-            <td>${formatDate(p.dob)}</td>
-            <td class="text-center">${p.gender === 'MALE' ? 'Nam' : 'Nữ'}</td>
-            <td>${householdCode}</td>
-            <td>${statusBadge}</td>
-            <td class="text-right">
-                <div class="action-icons">
-                    <button class="action-btn" onclick="editPerson(${p.id})" title="Chỉnh sửa">✏️</button>
-                    <button class="action-btn btn-text-delete" onclick="deletePerson(${p.id}, '${p.full_name}')" title="Xóa">🗑️</button>
-                </div>
-            </td>
-        </tr>
-    `}).join('');
+            <tr>
+                <td><strong>${p.full_name || ''}</strong></td>
+                <td>${p.cid || ''}</td>
+                <td>${formatDate(p.dob)}</td>
+                <td class="text-center">${p.gender === 'MALE' ? 'Nam' : 'Nữ'}</td>
+                <td>${householdCode}</td>
+                <td>${statusBadge}</td>
+                <td class="text-right">
+                    <div class="action-icons">
+                        <button class="action-btn" onclick="editPerson(${p.id})" title="Chỉnh sửa">✏️</button>
+                        <button class="action-btn btn-text-delete" onclick="deletePerson(${p.id}, '${p.full_name}')" title="Xóa">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `}).join('');
 }
 
 function populateHouseholdFilter() {
@@ -787,7 +1833,7 @@ function populateHouseholdFilter() {
         `<option value="${h.id}">${h.household_code} - ${h.address}</option>`
     ).join('');
 
-    select.innerHTML = `<option value="">-- Tất cả hộ khẩu --</option>${options}`;
+    select.innerHTML = `<option value="">--Tất cả hộ khẩu--</option>${options}`;
 }
 
 function filterPersons() {
@@ -837,27 +1883,27 @@ function addPerson() {
         <form id="add-person-form" onsubmit="handleAddPerson(event)">
             <div class="form-group">
                 <label for="person-name">Họ và tên *</label>
-                <input type="text" id="person-name" name="full_name" required>
+                <input type="text" id="person-name" name="full_name" class="form-control" required placeholder="Nhập họ và tên đầy đủ">
             </div>
             <div class="form-group">
                 <label for="person-dob">Ngày sinh *</label>
-                <input type="date" id="person-dob" name="dob" required>
+                <input type="date" id="person-dob" name="dob" class="form-control" required>
             </div>
             <div class="form-group">
                 <label for="person-gender">Giới tính *</label>
-                <select id="person-gender" name="gender" required>
-                    <option value="">-- Chọn --</option>
+                <select id="person-gender" name="gender" class="form-control" required>
+                    <option value="">-- Chọn giới tính --</option>
                     <option value="MALE">Nam</option>
                     <option value="FEMALE">Nữ</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="person-cid">CMND/CCCD *</label>
-                <input type="text" id="person-cid" name="cid" required maxlength="12">
+                <input type="text" id="person-cid" name="cid" class="form-control" required maxlength="12" placeholder="Nhập 12 số CCCD">
             </div>
             <div class="form-group">
-                <label for="person-household">Hộ khẩu</label>
-                <select id="person-household" name="household_id">
+                <label for="person-household">Thuộc hộ khẩu</label>
+                <select id="person-household" name="household_id" class="form-control">
                     <option value="">-- Chọn hộ khẩu --</option>
                     ${State.households.map(h => `
                         <option value="${h.id}">${h.household_code} - ${h.address}</option>
@@ -866,11 +1912,11 @@ function addPerson() {
             </div>
             <div class="form-group">
                 <label for="person-relation">Quan hệ với chủ hộ</label>
-                <input type="text" id="person-relation" name="relation_to_owner" placeholder="VD: Chủ hộ, Vợ/Chồng, Con">
+                <input type="text" id="person-relation" name="relation_to_owner" class="form-control" placeholder="VD: Chủ hộ, Vợ/Chồng, Con">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Thêm</button>
+                <button type="submit" class="btn-primary">Thêm nhân khẩu</button>
             </div>
         </form>
     `);
@@ -919,26 +1965,26 @@ async function editPerson(id) {
         <form id="edit-person-form" onsubmit="handleEditPerson(event, ${id})">
             <div class="form-group">
                 <label for="edit-person-name">Họ và tên *</label>
-                <input type="text" id="edit-person-name" value="${person.full_name || ''}" required>
+                <input type="text" id="edit-person-name" class="form-control" value="${person.full_name || ''}" required>
             </div>
             <div class="form-group">
                 <label for="edit-person-dob">Ngày sinh *</label>
-                <input type="date" id="edit-person-dob" value="${person.dob || ''}" required>
+                <input type="date" id="edit-person-dob" class="form-control" value="${person.dob || ''}" required>
             </div>
             <div class="form-group">
                 <label for="edit-person-gender">Giới tính *</label>
-                <select id="edit-person-gender" required>
+                <select id="edit-person-gender" class="form-control" required>
                     <option value="MALE" ${person.gender === 'MALE' ? 'selected' : ''}>Nam</option>
                     <option value="FEMALE" ${person.gender === 'FEMALE' ? 'selected' : ''}>Nữ</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="edit-person-cid">CMND/CCCD *</label>
-                <input type="text" id="edit-person-cid" value="${person.cid || ''}" required maxlength="12">
+                <input type="text" id="edit-person-cid" class="form-control" value="${person.cid || ''}" required maxlength="12">
             </div>
             <div class="form-group">
-                <label for="edit-person-household">Hộ khẩu</label>
-                <select id="edit-person-household">
+                <label for="edit-person-household">Thuộc hộ khẩu</label>
+                <select id="edit-person-household" class="form-control">
                     <option value="">-- Chọn hộ khẩu --</option>
                     ${State.households.map(h => `
                         <option value="${h.id}" ${person.household_id == h.id ? 'selected' : ''}>
@@ -949,11 +1995,11 @@ async function editPerson(id) {
             </div>
             <div class="form-group">
                 <label for="edit-person-relation">Quan hệ với chủ hộ</label>
-                <input type="text" id="edit-person-relation" value="${person.relation_to_owner || ''}">
+                <input type="text" id="edit-person-relation" class="form-control" value="${person.relation_to_owner || ''}">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Lưu</button>
+                <button type="submit" class="btn-primary">Lưu thay đổi</button>
             </div>
         </form>
     `);
@@ -991,7 +2037,7 @@ async function handleEditPerson(event, id) {
 }
 
 async function deletePerson(id, name) {
-    if (!confirm(`Bạn có chắc chắn muốn xóa nhân khẩu "${name}"?`)) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa nhân khẩu "${name}" ? `)) {
         return;
     }
 
@@ -1011,16 +2057,13 @@ async function deletePerson(id, name) {
 function updatePersonsPagination(totalItems) {
     PersonsPagination.totalItems = totalItems;
     PersonsPagination.currentPage = 1;
-    renderCurrentPersonsPage();
+    renderPersonsPagination();
 }
 
 function renderCurrentPersonsPage() {
-    const start = (PersonsPagination.currentPage - 1) * PersonsPagination.itemsPerPage;
-    const end = start + PersonsPagination.itemsPerPage;
-    const pageData = State.persons.slice(start, end);
-
-    renderPersonsTable(pageData);
-    renderPersonsPagination(State.persons);
+    // No longer needed for server-side pagination
+    // Keeping for backwards compatibility
+    loadPersons();
 }
 
 function renderPersonsPagination(allPersons) {
@@ -1035,9 +2078,7 @@ function renderPersonsPagination(allPersons) {
     let paginationHTML = '<div class="pagination">';
 
     paginationHTML += `
-        <button class="pagination-btn" 
-                onclick="changePersonsPage(${PersonsPagination.currentPage - 1})"
-                ${PersonsPagination.currentPage === 1 ? 'disabled' : ''}>
+        <button class="pagination-btn" onclick="changePersonsPage(${PersonsPagination.currentPage - 1})" ${PersonsPagination.currentPage === 1 ? 'disabled' : ''}>
             ‹ Trước
         </button>
     `;
@@ -1045,8 +2086,7 @@ function renderPersonsPagination(allPersons) {
     for (let i = 1; i <= totalPages; i++) {
         if (i === 1 || i === totalPages || (i >= PersonsPagination.currentPage - 1 && i <= PersonsPagination.currentPage + 1)) {
             paginationHTML += `
-                <button class="pagination-btn ${i === PersonsPagination.currentPage ? 'active' : ''}"
-                        onclick="changePersonsPage(${i})">
+                <button class="pagination-btn ${i === PersonsPagination.currentPage ? 'active' : ''}" onclick="changePersonsPage(${i})">
                     ${i}
                 </button>
             `;
@@ -1056,9 +2096,7 @@ function renderPersonsPagination(allPersons) {
     }
 
     paginationHTML += `
-        <button class="pagination-btn" 
-                onclick="changePersonsPage(${PersonsPagination.currentPage + 1})"
-                ${PersonsPagination.currentPage === totalPages ? 'disabled' : ''}>
+        <button class="pagination-btn" onclick="changePersonsPage(${PersonsPagination.currentPage + 1})" ${PersonsPagination.currentPage === totalPages ? 'disabled' : ''}>
             Sau ›
         </button>
     `;
@@ -1075,7 +2113,7 @@ function changePersonsPage(page) {
     if (page < 1 || page > totalPages) return;
 
     PersonsPagination.currentPage = page;
-    renderCurrentPersonsPage();
+    loadPersons();  // Fetch new page from server
 }
 
 
@@ -1128,13 +2166,13 @@ async function loadAbsentRequests() {
     } catch (error) {
         console.error('Error loading absent requests:', error);
         document.querySelector('#absent-table tbody').innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center" style="padding: 40px;">
-                    <div class="empty-state-icon">❌</div>
-                    <p>Không thể tải dữ liệu</p>
-                </td>
-            </tr>
-        `;
+            < tr >
+            <td colspan="7" class="text-center" style="padding: 40px;">
+                <div class="empty-state-icon">❌</div>
+                <p>Không thể tải dữ liệu</p>
+            </td>
+            </tr >
+            `;
     } finally {
         hideLoading();
     }
@@ -1145,19 +2183,19 @@ function renderAbsentTable(requests) {
 
     if (!requests || requests.length === 0) {
         tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center" style="padding: 40px;">
-                    <div class="empty-state-icon">📤</div>
-                    <p>Chưa có yêu cầu tạm vắng nào</p>
-                </td>
-            </tr>
-        `;
+            < tr >
+            <td colspan="7" class="text-center" style="padding: 40px;">
+                <div class="empty-state-icon">📤</div>
+                <p>Chưa có yêu cầu tạm vắng nào</p>
+            </td>
+            </tr >
+            `;
         return;
     }
 
     tbody.innerHTML = requests.map(req => {
         const person = State.persons.find(p => p.id === req.resident_id);
-        const personName = person ? person.full_name : `Resident #${req.resident_id}`;
+        const personName = person ? person.full_name : `Resident #${req.resident_id} `;
 
         const statusClass = req.status === 'APPROVED' ? 'status-approved' :
             req.status === 'REJECTED' ? 'status-rejected' : 'status-pending';
@@ -1167,17 +2205,23 @@ function renderAbsentTable(requests) {
         let actions = '';
         if (req.status === 'PENDING' && State.user && (State.user.role === 'admin' || State.user.role === 'leader')) {
             actions = `
-                <button class="icon-btn edit" onclick="approveAbsentRequest(${req.id})" title="Duyệt" style="color: var(--green-edit);">
-                    ✓
-                </button>
-                <button class="icon-btn delete" onclick="rejectAbsentRequest(${req.id})" title="Từ chối">
-                    ✗
-                </button>
-            `;
+            <button class="icon-btn edit" onclick="approveAbsentRequest(${req.id})" title="Duyệt" style="color: var(--green-edit);">
+                ✓
+            </button>
+            <button class="icon-btn delete" onclick="rejectAbsentRequest(${req.id})" title="Từ chối">
+                ✗
+            </button>
+        `;
+        } else if (req.status === 'APPROVED' && State.user && (State.user.role === 'admin' || State.user.role === 'leader')) {
+            actions = `
+            <button class="icon-btn" onclick="generateAbsentCertificate(${req.id})" title="Xem giấy tạm vắng" style="color: var(--primary-blue);">
+                📄
+            </button>
+        `;
         }
 
         return `
-        <tr>
+            <tr>
             <td>${personName}</td>
             <td>${formatDate(req.start_date)}</td>
             <td>${formatDate(req.end_date)}</td>
@@ -1192,7 +2236,7 @@ function renderAbsentTable(requests) {
                 </div>
             </td>
         </tr>
-    `}).join('');
+            `}).join('');
 }
 
 function addAbsentRequest() {
@@ -1200,7 +2244,7 @@ function addAbsentRequest() {
         <form id="add-absent-form" onsubmit="handleAddAbsentRequest(event)">
             <div class="form-group">
                 <label for="absent-resident">Nhân khẩu *</label>
-                <select id="absent-resident" required>
+                <select id="absent-resident" class="form-control" required>
                     <option value="">-- Chọn nhân khẩu --</option>
                     ${State.persons.map(p => `
                         <option value="${p.id}">${p.full_name} - ${p.cid}</option>
@@ -1209,23 +2253,23 @@ function addAbsentRequest() {
             </div>
             <div class="form-group">
                 <label for="absent-start">Ngày bắt đầu *</label>
-                <input type="date" id="absent-start" required>
+                <input type="date" id="absent-start" class="form-control" required>
             </div>
             <div class="form-group">
                 <label for="absent-end">Ngày kết thúc *</label>
-                <input type="date" id="absent-end" required>
+                <input type="date" id="absent-end" class="form-control" required>
             </div>
             <div class="form-group">
                 <label for="absent-reason">Lý do *</label>
-                <textarea id="absent-reason" rows="3" required placeholder="Lý do tạm vắng..."></textarea>
+                <textarea id="absent-reason" class="form-control" rows="3" required placeholder="Lý do tạm vắng..."></textarea>
             </div>
             <div class="form-group">
                 <label for="absent-destination">Địa điểm đến *</label>
-                <input type="text" id="absent-destination" required placeholder="Địa chỉ tạm trú">
+                <input type="text" id="absent-destination" class="form-control" required placeholder="Địa chỉ tạm trú">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
-                <button type="submit" class="btn-add">Tạo yêu cầu</button>
+                <button type="submit" class="btn-primary">Tạo yêu cầu</button>
             </div>
         </form>
     `);
@@ -1285,8 +2329,137 @@ async function rejectAbsentRequest(id) {
         return;
     }
 
-    showToast('Tính năng từ chối đang được phát triển', 'info');
-    // TODO: Implement reject endpoint
+    try {
+        showLoading();
+        await apiCall(`/absent-requests/${id}/reject`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        });
+        showToast('Đã từ chối yêu cầu', 'success');
+        loadAbsentRequests();
+    } catch (error) {
+        console.error('Error rejecting request:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function generateAbsentCertificate(id) {
+    try {
+        showLoading();
+        const cert = await apiCall(`/absent-requests/${id}/certificate`);
+
+        if (cert) {
+            showCertificateModal(cert);
+        }
+    } catch (error) {
+        console.error('Error generating certificate:', error);
+        showToast('Không thể tạo giấy tạm vắng', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function showCertificateModal(cert) {
+    const modalContent = `
+        <div class="certificate-container" id="certificate-print-area">
+            <div class="certificate-header">
+                <h2>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h2>
+                <p><strong>Độc lập - Tự do - Hạnh phúc</strong></p>
+                <hr>
+            </div>
+            <div class="certificate-title">
+                <h1>GIẤY XÁC NHẬN TẠM VẮNG</h1>
+            </div>
+            <div class="certificate-body">
+                <p>Xác nhận công dân:</p>
+                <table class="certificate-info">
+                    <tr>
+                        <td><strong>Họ và tên:</strong></td>
+                        <td>${cert.resident_name}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Số CCCD/CMND:</strong></td>
+                        <td>${cert.resident_cid}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Ngày sinh:</strong></td>
+                        <td>${formatDate(cert.resident_dob)}</td>
+                    </tr>
+                </table>
+                <p style="margin-top: 20px;">Được phép tạm vắng:</p>
+                <table class="certificate-info">
+                    <tr>
+                        <td><strong>Từ ngày:</strong></td>
+                        <td>${formatDate(cert.start_date)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Đến ngày:</strong></td>
+                        <td>${formatDate(cert.end_date)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Nơi đến:</strong></td>
+                        <td>${cert.destination}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Lý do:</strong></td>
+                        <td>${cert.reason}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="certificate-footer" style="margin-top: 40px; text-align: right; padding-right: 50px;">
+                <p><em>Ngày cấp: ${formatDate(cert.issue_date)}</em></p>
+                <p><strong>CÁN BỘ PHỤ TRÁCH</strong></p>
+                <p style="margin-top: 60px;"><em>(Ký, ghi rõ họ tên)</em></p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
+            <button type="button" class="btn-add" onclick="printCertificate()">🖨️ In giấy</button>
+        </div>
+    `;
+
+    showModal('Giấy xác nhận tạm vắng', modalContent);
+}
+
+function printCertificate() {
+    const printContent = document.getElementById('certificate-print-area');
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Giấy xác nhận tạm vắng</title>
+            <style>
+                body {
+                    font-family: 'Times New Roman', serif;
+                    margin: 0;
+                    padding: 40px;
+                }
+                .certificate-container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                }
+                .certificate-header { text-align: center; }
+                .certificate-header h2 { margin: 0; font-size: 16px; }
+                .certificate-header p { margin: 5px 0; }
+                .certificate-title { text-align: center; margin: 30px 0; }
+                .certificate-title h1 { font-size: 22px; text-transform: uppercase; }
+                .certificate-info { width: 100%; border-collapse: collapse; }
+                .certificate-info td { padding: 8px 0; }
+                .certificate-info td:first-child { width: 180px; }
+                .certificate-footer { text-align: right; padding-right: 50px; }
+            </style>
+        </head>
+        <body>
+            ${printContent.innerHTML}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
 }
 
 // ==========================================
@@ -1304,7 +2477,8 @@ async function loadTempResidences() {
         }
     } catch (error) {
         console.error('Error loading temp residences:', error);
-        document.querySelector('#residence-table tbody').innerHTML = `
+        const tbody = document.querySelector('#temp-res-table tbody');
+        if (tbody) tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="text-center" style="padding: 40px;">
                     <div class="empty-state-icon">❌</div>
@@ -1318,7 +2492,8 @@ async function loadTempResidences() {
 }
 
 function renderResidenceTable(residences) {
-    const tbody = document.querySelector('#residence-table tbody');
+    const tbody = document.querySelector('#temp-res-table tbody');
+    if (!tbody) return; // Guard against missing element
 
     if (!residences || residences.length === 0) {
         tbody.innerHTML = `
@@ -1472,8 +2647,19 @@ async function rejectTempResidence(id) {
         return;
     }
 
-    showToast('Tính năng từ chối đang được phát triển', 'info');
-    // TODO: Implement reject endpoint
+    try {
+        showLoading();
+        await apiCall(`/temp-residences/${id}/reject`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        });
+        showToast('Đã từ chối đăng ký', 'success');
+        loadTempResidences();
+    } catch (error) {
+        console.error('Error rejecting residence:', error);
+    } finally {
+        hideLoading();
+    }
 }
 
 // ==========================================
@@ -1707,18 +2893,22 @@ function renderComplaintsTable(complaints) {
         };
 
         const statusClass = c.status === 'RESOLVED' ? 'badge badge-success' :
-            c.status === 'PENDING' ? 'badge badge-warning' : 'badge badge-danger';
+            c.status === 'PROCESSING' ? 'badge badge-warning' : 'badge badge-danger';
         const statusText = c.status === 'RESOLVED' ? 'Đã giải quyết' :
-            c.status === 'PENDING' ? 'Đang xử lý' : 'Mới';
+            c.status === 'PROCESSING' ? 'Đang xử lý' : 'Mới';
 
-        // Impact Badge Logic
-        const impactBadge = c.duplication_count > 0
-            ? `<span class="impact-badge">x${c.duplication_count + 1} Reports</span>`
-            : `<span class="badge badge-neutral">1 Report</span>`;
+        // Get reporter name from reporter_list
+        let reporterName = 'Không rõ';
+        if (c.reporter_list && c.reporter_list.length > 0) {
+            reporterName = c.reporter_list[0].username || 'Cư dân';
+            if (c.reporter_list.length > 1) {
+                reporterName += ` (+${c.reporter_list.length - 1})`;
+            }
+        }
 
         // Truncate content
-        const contentPreview = (c.content || '').length > 60 ?
-            c.content.substring(0, 60) + '...' : c.content;
+        const contentPreview = (c.content || '').length > 80 ?
+            c.content.substring(0, 80) + '...' : c.content;
 
         let actions = `
             <button class="icon-btn" onclick="viewComplaintDetails(${c.id})" title="Xem chi tiết">
@@ -1729,7 +2919,7 @@ function renderComplaintsTable(complaints) {
         if (State.user && (State.user.role === 'admin' || State.user.role === 'leader')) {
             if (c.status !== 'RESOLVED') {
                 actions += `
-                    <button class="icon-btn" onclick="updateComplaintStatus(${c.id}, 'PENDING')" title="Đang xử lý" style="color: var(--warning);">
+                    <button class="icon-btn" onclick="updateComplaintStatus(${c.id}, 'PROCESSING')" title="Đang xử lý" style="color: var(--warning);">
                         🔄
                     </button>
                     <button class="icon-btn" onclick="updateComplaintStatus(${c.id}, 'RESOLVED')" title="Giải quyết" style="color: var(--success);">
@@ -1742,11 +2932,12 @@ function renderComplaintsTable(complaints) {
         return `
         <tr>
             <td>
-                <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${categoryMap[c.category] || c.category}</div>
+                <div style="font-weight: 600;">${reporterName}</div>
+            </td>
+            <td>
                 <div style="color: var(--text-secondary); font-size: 13px;">${contentPreview}</div>
             </td>
-            <td>${categoryMap[c.category]}</td>
-            <td>${impactBadge}</td>
+            <td><span class="badge badge-info">${categoryMap[c.category] || c.category}</span></td>
             <td style="color: var(--text-secondary);">${formatDate(c.created_at)}</td>
             <td>
                 <span class="${statusClass}">${statusText}</span>
@@ -1851,7 +3042,38 @@ async function viewComplaintDetails(id) {
     };
 
     const statusText = complaint.status === 'RESOLVED' ? 'Đã giải quyết' :
-        complaint.status === 'PENDING' ? 'Đang xử lý' : 'Mới';
+        complaint.status === 'PROCESSING' ? 'Đang xử lý' : 'Mới';
+
+    const statusClass = complaint.status === 'RESOLVED' ? 'status-approved' :
+        complaint.status === 'PROCESSING' ? 'status-pending' : 'badge-danger';
+
+    // Build reporter list HTML
+    let reportersHtml = '';
+    if (complaint.reporter_list && complaint.reporter_list.length > 0) {
+        reportersHtml = `
+            <div style="margin-bottom: 16px;">
+                <strong>👥 Danh sách người phản ánh (${complaint.reporter_list.length}):</strong>
+                <div style="padding: 12px; background: #fff8e1; border-radius: 6px; margin-top: 8px; max-height: 150px; overflow-y: auto;">
+                    ${complaint.reporter_list.map((r, i) => `
+                        <div style="padding: 6px 0; ${i > 0 ? 'border-top: 1px solid #ffe082;' : ''}">
+                            <span style="font-weight: 500;">${r.username}</span>
+                            <span style="color: #666; font-size: 12px; margin-left: 8px;">${formatDate(r.at)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Respond button for leaders/admins
+    let respondButton = '';
+    if (State.user && (State.user.role === 'admin' || State.user.role === 'leader') && complaint.status !== 'RESOLVED') {
+        respondButton = `
+            <button type="button" class="btn-primary" onclick="showRespondForm(${id})" style="margin-right: 8px;">
+                📝 Thêm phản hồi từ cấp trên
+            </button>
+        `;
+    }
 
     showModal('Chi tiết phản ánh', `
         <div>
@@ -1859,16 +3081,17 @@ async function viewComplaintDetails(id) {
                 <strong>Danh mục:</strong> ${categoryMap[complaint.category]}
             </div>
             <div style="margin-bottom: 16px;">
-                <strong>Trạng thái:</strong> <span class="status-badge">${statusText}</span>
+                <strong>Trạng thái:</strong> <span class="status-badge ${statusClass}">${statusText}</span>
             </div>
             <div style="margin-bottom: 16px;">
                 <strong>Ngày tạo:</strong> ${formatDate(complaint.created_at)}
             </div>
             ${complaint.duplication_count > 0 ? `
                 <div style="margin-bottom: 16px;">
-                    <strong>Số lượng phản ánh tương tự:</strong> ${complaint.duplication_count}
+                    <strong>Số lượng phản ánh tương tự:</strong> <span class="impact-badge">${complaint.duplication_count + 1} Reports</span>
                 </div>
             ` : ''}
+            ${reportersHtml}
             <div style="margin-bottom: 16px;">
                 <strong>Nội dung:</strong>
                 <div style="padding: 12px; background: #f5f5f5; border-radius: 6px; margin-top: 8px;">
@@ -1877,7 +3100,7 @@ async function viewComplaintDetails(id) {
             </div>
             ${complaint.resolution_note ? `
                 <div style="margin-bottom: 16px;">
-                    <strong>Ghi chú giải quyết:</strong>
+                    <strong>📋 Phản hồi/Ghi chú giải quyết:</strong>
                     <div style="padding: 12px; background: #e8f5e9; border-radius: 6px; margin-top: 8px;">
                         ${complaint.resolution_note}
                     </div>
@@ -1885,9 +3108,66 @@ async function viewComplaintDetails(id) {
             ` : ''}
         </div>
         <div class="modal-footer">
+            ${respondButton}
             <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
         </div>
     `);
+}
+
+// Show form for leader to add response from upper management
+function showRespondForm(complaintId) {
+    closeModal();
+
+    showModal('Thêm phản hồi từ cấp trên', `
+        <form id="respond-form" onsubmit="handleRespondComplaint(event, ${complaintId})">
+            <div class="form-group">
+                <label for="response-content">Nội dung phản hồi *</label>
+                <textarea id="response-content" rows="4" required placeholder="Nhập phản hồi từ cấp trên..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="response-status">Cập nhật trạng thái</label>
+                <select id="response-status">
+                    <option value="PROCESSING">Đang xử lý</option>
+                    <option value="RESOLVED">Đã giải quyết</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+                <button type="submit" class="btn-add">Gửi phản hồi</button>
+            </div>
+        </form>
+    `);
+}
+
+// Handle response submission
+async function handleRespondComplaint(event, complaintId) {
+    event.preventDefault();
+
+    const responseContent = document.getElementById('response-content').value;
+    const newStatus = document.getElementById('response-status').value;
+
+    try {
+        showLoading();
+        const result = await apiCall(`/complaints/${complaintId}/respond`, {
+            method: 'POST',
+            body: JSON.stringify({
+                response_content: responseContent,
+                new_status: newStatus
+            })
+        });
+
+        if (result && result.status === 'success') {
+            const reporterCount = result.reporters_to_notify?.length || 0;
+            showToast(`Đã thêm phản hồi. ${reporterCount} người sẽ được thông báo.`, 'success');
+            closeModal();
+            loadComplaints();
+        }
+    } catch (error) {
+        console.error('Error responding to complaint:', error);
+        showToast('Có lỗi xảy ra', 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
 async function updateComplaintStatus(id, newStatus) {
@@ -1947,6 +3227,11 @@ async function loadStatistics() {
     try {
         showLoading();
 
+        // Initialize year filter if not done
+        initYearFilter();
+
+        const selectedYear = document.getElementById('stats-year-filter')?.value || new Date().getFullYear();
+
         // Load summary counts from API
         const summary = await apiCall('/stats/summary');
         if (summary) {
@@ -1964,14 +3249,36 @@ async function loadStatistics() {
             if (popStats) {
                 renderGenderChart(popStats.gender_distribution);
                 renderAgeChart(popStats.age_distribution);
+
+                // Update summary boxes
+                updateGenderSummary(popStats.gender_distribution);
+                updateAgeSummary(popStats.age_distribution);
             }
         } catch (e) {
             console.log('Population stats not available:', e.message);
         }
 
-        // Load complaints stats
+        // Load temp status details
         try {
-            const complaintStats = await apiCall('/stats/complaints-quarterly');
+            const tempStatus = await apiCall('/stats/temp-status');
+            if (tempStatus) {
+                // Update absent cards
+                document.getElementById('absent-pending').textContent = tempStatus.absent?.pending || 0;
+                document.getElementById('absent-approved').textContent = tempStatus.absent?.approved || 0;
+                document.getElementById('absent-active').textContent = tempStatus.absent?.active_today || 0;
+
+                // Update temp residence cards
+                document.getElementById('tempres-pending').textContent = tempStatus.temp_residence?.pending || 0;
+                document.getElementById('tempres-approved').textContent = tempStatus.temp_residence?.approved || 0;
+                document.getElementById('tempres-active').textContent = tempStatus.temp_residence?.active_today || 0;
+            }
+        } catch (e) {
+            console.log('Temp status stats not available:', e.message);
+        }
+
+        // Load complaints stats with year filter
+        try {
+            const complaintStats = await apiCall(`/stats/complaints-quarterly?year=${selectedYear}`);
             if (complaintStats) {
                 renderComplaintsChart(complaintStats);
             }
@@ -1983,6 +3290,174 @@ async function loadStatistics() {
     } finally {
         hideLoading();
     }
+}
+
+function initYearFilter() {
+    const select = document.getElementById('stats-year-filter');
+    if (!select || select.options.length > 0) return;
+
+    const currentYear = new Date().getFullYear();
+    for (let year = currentYear; year >= currentYear - 5; year--) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        select.appendChild(option);
+    }
+}
+
+function updateGenderSummary(data) {
+    const container = document.getElementById('gender-stats-summary');
+    if (!container) return;
+
+    const male = data?.MALE || 0;
+    const female = data?.FEMALE || 0;
+    const total = male + female;
+    const malePercent = total > 0 ? ((male / total) * 100).toFixed(1) : 0;
+    const femalePercent = total > 0 ? ((female / total) * 100).toFixed(1) : 0;
+
+    container.innerHTML = `
+        <div style="display: flex; justify-content: space-between;">
+            <span>👨 Nam: <strong>${male}</strong> (${malePercent}%)</span>
+            <span>👩 Nữ: <strong>${female}</strong> (${femalePercent}%)</span>
+            <span>📊 Tổng: <strong>${total}</strong></span>
+        </div>
+    `;
+}
+
+function updateAgeSummary(data) {
+    const container = document.getElementById('age-stats-summary');
+    if (!container) return;
+
+    const child = data?.['0-14'] || 0;
+    const adult = data?.['15-59'] || 0;
+    const senior = data?.['60+'] || 0;
+    const total = child + adult + senior;
+
+    container.innerHTML = `
+        <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span>👶 Trẻ em (0-14): <strong>${child}</strong></span>
+            <span>👨‍💼 Lao động (15-59): <strong>${adult}</strong></span>
+            <span>👴 Cao tuổi (60+): <strong>${senior}</strong></span>
+        </div>
+    `;
+}
+
+function exportStatistics() {
+    // Generate CSV export
+    const data = {
+        generated_at: new Date().toISOString(),
+        summary: {
+            total_households: document.getElementById('total-households')?.textContent || 0,
+            total_persons: document.getElementById('total-persons')?.textContent || 0,
+            absent_and_temp: document.getElementById('total-absent')?.textContent || '0 / 0',
+            pending_complaints: document.getElementById('total-complaints')?.textContent || 0
+        },
+        temp_status: {
+            absent_pending: document.getElementById('absent-pending')?.textContent || 0,
+            absent_approved: document.getElementById('absent-approved')?.textContent || 0,
+            absent_active: document.getElementById('absent-active')?.textContent || 0,
+            tempres_pending: document.getElementById('tempres-pending')?.textContent || 0,
+            tempres_approved: document.getElementById('tempres-approved')?.textContent || 0,
+            tempres_active: document.getElementById('tempres-active')?.textContent || 0
+        }
+    };
+
+    // Create CSV content
+    let csv = 'Báo cáo thống kê nhân khẩu\n';
+    csv += `Ngày xuất: ${formatDate(new Date().toISOString())}\n\n`;
+    csv += 'Chỉ tiêu,Giá trị\n';
+    csv += `Tổng hộ khẩu,${data.summary.total_households}\n`;
+    csv += `Tổng nhân khẩu,${data.summary.total_persons}\n`;
+    csv += `Tạm vắng / Tạm trú,${data.summary.absent_and_temp}\n`;
+    csv += `Phản ánh chờ xử lý,${data.summary.pending_complaints}\n\n`;
+    csv += 'Chi tiết tạm vắng:\n';
+    csv += `Chờ duyệt,${data.temp_status.absent_pending}\n`;
+    csv += `Đã duyệt,${data.temp_status.absent_approved}\n`;
+    csv += `Đang vắng,${data.temp_status.absent_active}\n\n`;
+    csv += 'Chi tiết tạm trú:\n';
+    csv += `Chờ duyệt,${data.temp_status.tempres_pending}\n`;
+    csv += `Đã duyệt,${data.temp_status.tempres_approved}\n`;
+    csv += `Đang trú,${data.temp_status.tempres_active}\n`;
+
+    // Download CSV
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `thong_ke_nhan_khau_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+
+    showToast('Đã xuất báo cáo thành công', 'success');
+}
+
+function printStatistics() {
+    const statsSection = document.getElementById('tab-statistics');
+    if (!statsSection) return;
+
+    // Create print window
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Báo cáo thống kê nhân khẩu - ${formatDate(new Date().toISOString())}</title>
+            <style>
+                body { font-family: 'Inter', 'Roboto', sans-serif; padding: 20px; }
+                h1 { text-align: center; color: #1e3a5f; }
+                .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 20px 0; }
+                .kpi-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; flex: 1; min-width: 200px; }
+                .kpi-label { font-size: 12px; color: #64748b; }
+                .kpi-value { font-size: 24px; font-weight: 700; color: #1e40af; }
+                .print-date { text-align: center; color: #64748b; margin-bottom: 20px; }
+                @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+            </style>
+        </head>
+        <body>
+            <h1>🏢 BÁO CÁO THỐNG KÊ NHÂN KHẨU</h1>
+            <div class="print-date">Ngày in: ${formatDate(new Date().toISOString())}</div>
+            
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-label">Tổng nhân khẩu</div>
+                    <div class="kpi-value">${document.getElementById('total-persons')?.textContent || 0}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Hộ gia đình</div>
+                    <div class="kpi-value">${document.getElementById('total-households')?.textContent || 0}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Tạm vắng / Tạm trú</div>
+                    <div class="kpi-value">${document.getElementById('total-absent')?.textContent || '0 / 0'}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Phản ánh chờ xử lý</div>
+                    <div class="kpi-value">${document.getElementById('total-complaints')?.textContent || 0}</div>
+                </div>
+            </div>
+            
+            <h2>Chi tiết Tạm vắng</h2>
+            <div class="kpi-row">
+                <div class="kpi-card"><div class="kpi-label">Chờ duyệt</div><div class="kpi-value">${document.getElementById('absent-pending')?.textContent || 0}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Đã duyệt</div><div class="kpi-value">${document.getElementById('absent-approved')?.textContent || 0}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Đang vắng</div><div class="kpi-value">${document.getElementById('absent-active')?.textContent || 0}</div></div>
+            </div>
+            
+            <h2>Chi tiết Tạm trú</h2>
+            <div class="kpi-row">
+                <div class="kpi-card"><div class="kpi-label">Chờ duyệt</div><div class="kpi-value">${document.getElementById('tempres-pending')?.textContent || 0}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Đã duyệt</div><div class="kpi-value">${document.getElementById('tempres-approved')?.textContent || 0}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Đang trú</div><div class="kpi-value">${document.getElementById('tempres-active')?.textContent || 0}</div></div>
+            </div>
+            
+            <h2>Thống kê độ tuổi</h2>
+            <div id="age-summary">${document.getElementById('age-stats-summary')?.innerHTML || ''}</div>
+            
+            <h2>Thống kê giới tính</h2>
+            <div id="gender-summary">${document.getElementById('gender-stats-summary')?.innerHTML || ''}</div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
 }
 
 function renderGenderChart(data) {
@@ -2192,3 +3667,202 @@ function renderComplaintsChart(data) {
         }
     });
 }
+
+// ==========================================
+// GLOBAL SEARCH
+// ==========================================
+
+let searchTimeout = null;
+
+function initGlobalSearch() {
+    const searchInput = document.getElementById('global-search');
+    if (!searchInput) return;
+
+    // Create search results dropdown
+    let dropdown = document.getElementById('search-results-dropdown');
+    if (!dropdown) {
+        dropdown = document.createElement('div');
+        dropdown.id = 'search-results-dropdown';
+        dropdown.style.cssText = `
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        `;
+        searchInput.parentElement.style.position = 'relative';
+        searchInput.parentElement.appendChild(dropdown);
+    }
+
+    // Add event listener
+    searchInput.addEventListener('input', function () {
+        clearTimeout(searchTimeout);
+        const query = this.value.trim();
+
+        if (query.length < 2) {
+            dropdown.style.display = 'none';
+            return;
+        }
+
+        searchTimeout = setTimeout(() => {
+            performGlobalSearch(query);
+        }, 300);
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+}
+
+async function performGlobalSearch(query) {
+    const dropdown = document.getElementById('search-results-dropdown');
+    if (!dropdown) return;
+
+    try {
+        const results = await apiCall(`/stats/search?q=${encodeURIComponent(query)}`);
+
+        if (!results || (results.persons.length === 0 && results.households.length === 0)) {
+            dropdown.innerHTML = '<div style="padding: 16px; color: #64748b; text-align: center;">Không tìm thấy kết quả</div>';
+            dropdown.style.display = 'block';
+            return;
+        }
+
+        let html = '';
+
+        if (results.persons.length > 0) {
+            html += '<div style="padding: 8px 16px; background: #f1f5f9; font-weight: 600; color: #475569;">👤 Nhân khẩu</div>';
+            results.persons.forEach(p => {
+                html += `
+                    <div class="search-result-item" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f5f9;" 
+                         onclick="viewPersonFromSearch(${p.id})" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <div style="font-weight: 500;">${p.full_name}</div>
+                        <div style="font-size: 12px; color: #64748b;">CCCD: ${p.cid}</div>
+                    </div>
+                `;
+            });
+        }
+
+        if (results.households.length > 0) {
+            html += '<div style="padding: 8px 16px; background: #f1f5f9; font-weight: 600; color: #475569;">🏠 Hộ khẩu</div>';
+            results.households.forEach(h => {
+                html += `
+                    <div class="search-result-item" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f5f9;" 
+                         onclick="viewHouseholdFromSearch(${h.id})" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <div style="font-weight: 500;">${h.household_code}</div>
+                        <div style="font-size: 12px; color: #64748b;">${h.address}</div>
+                    </div>
+                `;
+            });
+        }
+
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+    } catch (error) {
+        console.error('Search error:', error);
+        dropdown.style.display = 'none';
+    }
+}
+
+function viewPersonFromSearch(id) {
+    document.getElementById('search-results-dropdown').style.display = 'none';
+    document.getElementById('global-search').value = '';
+    switchTab('persons');
+    // Highlight person after a small delay
+    setTimeout(() => {
+        const row = document.querySelector(`#persons-table tr[data-id="${id}"]`);
+        if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.background = '#fef3c7';
+            setTimeout(() => { row.style.background = ''; }, 2000);
+        }
+    }, 500);
+}
+
+function viewHouseholdFromSearch(id) {
+    document.getElementById('search-results-dropdown').style.display = 'none';
+    document.getElementById('global-search').value = '';
+    switchTab('households');
+    viewHouseholdHistory(id);
+}
+
+// ==========================================
+// HOUSEHOLD HISTORY
+// ==========================================
+
+async function viewHouseholdHistory(id) {
+    try {
+        showLoading();
+        const data = await apiCall(`/households/${id}/history`);
+
+        if (!data) {
+            showToast('Không thể tải lịch sử hộ khẩu', 'error');
+            return;
+        }
+
+        const changeTypeLabels = {
+            'MOVED_IN': '📥 Nhập khẩu',
+            'MOVED_OUT': '📤 Chuyển đi',
+            'SPLIT': '✂️ Tách khẩu',
+            'MERGE': '🔗 Nhập chung',
+            'UPDATE': '✏️ Cập nhật',
+            'CREATED': '➕ Tạo mới'
+        };
+
+        let historyHtml = '';
+
+        if (!data.history || data.history.length === 0) {
+            historyHtml = `
+                <div style="text-align: center; padding: 40px; color: #64748b;">
+                    <div style="font-size: 48px; margin-bottom: 8px;">📜</div>
+                    <p>Chưa có lịch sử thay đổi</p>
+                </div>
+            `;
+        } else {
+            historyHtml = data.history.map(h => `
+                <div style="border-left: 3px solid var(--accent-color); padding: 12px 16px; margin-bottom: 12px; background: #f8fafc; border-radius: 0 8px 8px 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span class="badge badge-info">${changeTypeLabels[h.change_type] || h.change_type}</span>
+                        <span style="font-size: 12px; color: #64748b;">${formatDate(h.created_at)}</span>
+                    </div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">👤 ${h.resident_name}</div>
+                    <div style="font-size: 13px; color: #475569;">
+                        ${h.old_data ? 'Từ: ' + JSON.stringify(h.old_data) : ''}
+                        ${h.new_data ? ' → ' + JSON.stringify(h.new_data) : ''}
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Thực hiện bởi: ${h.changed_by}</div>
+                </div>
+            `).join('');
+        }
+
+        showModal(`📜 Lịch sử hộ khẩu ${data.household_code}`, `
+            <div style="max-height: 400px; overflow-y: auto;">
+                ${historyHtml}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Đóng</button>
+            </div>
+        `);
+    } catch (error) {
+        console.error('Error loading household history:', error);
+        showToast('Không thể tải lịch sử', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Initialize global search on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initGlobalSearch();
+});
+
+

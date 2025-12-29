@@ -60,14 +60,56 @@ async def create_household(household: HouseholdCreate, db: AsyncSession = Depend
     
     return new_hh
 
-@router.get("/", response_model=List[HouseholdResponse], dependencies=[Depends(PermissionChecker("household.view"))])
-async def list_households(skip: int = 0, limit: int = 100, search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
-    query = select(Household)
+@router.get("/", dependencies=[Depends(PermissionChecker("household.view"))])
+async def list_households(
+    page: int = 1, 
+    limit: int = 10, 
+    search: Optional[str] = None, 
+    db: AsyncSession = Depends(get_db)
+):
+    # Build base query
+    query = select(Household).where(Household.deleted_at.is_(None))
     if search:
-         query = query.where(Household.household_code.ilike(f"%{search}%") | Household.address.ilike(f"%{search}%"))
+        query = query.where(
+            Household.household_code.ilike(f"%{search}%") | 
+            Household.address.ilike(f"%{search}%")
+        )
+    
+    # Get total count
+    from sqlalchemy import func as sql_func
+    count_query = select(sql_func.count()).select_from(Household).where(Household.deleted_at.is_(None))
+    if search:
+        count_query = count_query.where(
+            Household.household_code.ilike(f"%{search}%") | 
+            Household.address.ilike(f"%{search}%")
+        )
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Calculate pagination
+    total_pages = (total + limit - 1) // limit if total > 0 else 1
+    page = max(1, min(page, total_pages))  # Ensure valid page
+    skip = (page - 1) * limit
+    
+    # Get paginated data
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    households = result.scalars().all()
+    
+    return {
+        "items": [
+            {
+                "id": h.id,
+                "household_code": h.household_code,
+                "owner_id": h.owner_id,
+                "address": h.address
+            } for h in households
+        ],
+        "total": total,
+        "page": page,
+        "pages": total_pages,
+        "limit": limit
+    }
 
 @router.post("/split", dependencies=[Depends(PermissionChecker("household.split"))])
 async def split_household(req: SplitHouseholdRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -164,3 +206,51 @@ async def split_household(req: SplitHouseholdRequest, db: AsyncSession = Depends
             
         await db.commit()
         return {"status": "success", "new_household_id": new_household.id}
+
+@router.get("/{id}/history", dependencies=[Depends(PermissionChecker("household.view"))])
+async def get_household_history(id: int, db: AsyncSession = Depends(get_db)):
+    """Get change history of a household"""
+    from sqlalchemy.orm import selectinload
+    
+    # Verify household exists
+    household = await db.get(Household, id)
+    if not household:
+        raise HTTPException(status_code=404, detail="Household not found")
+    
+    # Fetch history records
+    result = await db.execute(
+        select(ChangeHistory)
+        .where(ChangeHistory.household_id == id)
+        .order_by(ChangeHistory.changed_at.desc())
+        .limit(50)
+    )
+    histories = result.scalars().all()
+    
+    # Format response
+    history_items = []
+    for h in histories:
+        # Get resident name
+        resident = await db.get(Resident, h.resident_id) if h.resident_id else None
+        resident_name = resident.full_name if resident else "Unknown"
+        
+        # Get user who made the change
+        from app.models.auth_models import User
+        changer = await db.get(User, h.changed_by) if h.changed_by else None
+        changer_name = changer.username if changer else "System"
+        
+        history_items.append({
+            "id": h.id,
+            "change_type": h.change_type.value if hasattr(h.change_type, 'value') else str(h.change_type),
+            "resident_name": resident_name,
+            "old_data": h.old_data,
+            "new_data": h.new_data,
+            "changed_by": changer_name,
+            "created_at": h.changed_at.isoformat() if h.changed_at else None
+        })
+    
+    return {
+        "household_id": id,
+        "household_code": household.household_code,
+        "history": history_items
+    }
+

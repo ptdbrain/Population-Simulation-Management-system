@@ -85,3 +85,112 @@ async def get_complaint_stats(year: int = None, db: AsyncSession = Depends(get_d
         })
         
     return data_list
+
+@router.get("/temp-status", dependencies=[Depends(PermissionChecker("report.statistics"))])
+async def get_temp_status_stats(db: AsyncSession = Depends(get_db)):
+    """Statistics for temporary absence and residence"""
+    from datetime import date
+    from app.models.temp_models import RequestStatus
+    
+    today = date.today()
+    
+    # Absent requests by status
+    absent_pending = await db.scalar(
+        select(func.count(AbsentRequest.id)).where(AbsentRequest.status == RequestStatus.PENDING)
+    )
+    absent_approved = await db.scalar(
+        select(func.count(AbsentRequest.id)).where(AbsentRequest.status == RequestStatus.APPROVED)
+    )
+    
+    # Temp residence by status
+    temp_pending = await db.scalar(
+        select(func.count(TempResidenceRegistration.id)).where(TempResidenceRegistration.status == RequestStatus.PENDING)
+    )
+    temp_approved = await db.scalar(
+        select(func.count(TempResidenceRegistration.id)).where(TempResidenceRegistration.status == RequestStatus.APPROVED)
+    )
+    
+    # Active today (within date range)
+    from sqlalchemy import and_
+    
+    active_absent = await db.scalar(
+        select(func.count(AbsentRequest.id)).where(
+            and_(
+                AbsentRequest.status == RequestStatus.APPROVED,
+                AbsentRequest.start_date <= today,
+                AbsentRequest.end_date >= today
+            )
+        )
+    )
+    
+    active_temp_res = await db.scalar(
+        select(func.count(TempResidenceRegistration.id)).where(
+            and_(
+                TempResidenceRegistration.status == RequestStatus.APPROVED,
+                TempResidenceRegistration.start_date <= today,
+                TempResidenceRegistration.end_date >= today
+            )
+        )
+    )
+    
+    return {
+        "absent": {
+            "pending": absent_pending or 0,
+            "approved": absent_approved or 0,
+            "active_today": active_absent or 0
+        },
+        "temp_residence": {
+            "pending": temp_pending or 0,
+            "approved": temp_approved or 0,
+            "active_today": active_temp_res or 0
+        }
+    }
+
+@router.get("/search")
+async def global_search(q: str, db: AsyncSession = Depends(get_db)):
+    """Global search across persons and households"""
+    from sqlalchemy import or_
+    
+    results = {
+        "persons": [],
+        "households": []
+    }
+    
+    if not q or len(q) < 2:
+        return results
+    
+    search_term = f"%{q}%"
+    
+    # Search persons
+    persons_stmt = select(Resident).where(
+        or_(
+            Resident.full_name.ilike(search_term),
+            Resident.cid.ilike(search_term)
+        )
+    ).limit(10)
+    persons_res = await db.execute(persons_stmt)
+    for p in persons_res.scalars().all():
+        results["persons"].append({
+            "id": p.id,
+            "full_name": p.full_name,
+            "cid": p.cid,
+            "household_id": p.household_id
+        })
+    
+    # Search households
+    households_stmt = select(Household).where(
+        or_(
+            Household.household_code.ilike(search_term),
+            Household.address.ilike(search_term)
+        )
+    ).limit(10)
+    hh_res = await db.execute(households_stmt)
+    for h in hh_res.scalars().all():
+        results["households"].append({
+            "id": h.id,
+            "household_code": h.household_code,
+            "address": h.address
+        })
+    
+    return results
+

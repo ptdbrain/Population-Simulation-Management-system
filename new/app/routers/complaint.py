@@ -112,3 +112,37 @@ async def get_complaint(id: int, db: AsyncSession = Depends(get_db), current_use
 async def get_complaints(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Complaint))
     return result.scalars().all()
+
+# Response/Feedback from upper management
+class ComplaintResponse(BaseModel):
+    response_content: str
+    new_status: Optional[ComplaintStatus] = None
+
+@router.post("/{id}/respond", dependencies=[Depends(PermissionChecker("complaint.update_status"))])
+async def respond_to_complaint(id: int, data: ComplaintResponse, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Leader adds response from upper management.
+    This updates the resolution_note and can change status.
+    Returns list of reporters to be notified.
+    """
+    complaint = await db.get(Complaint, id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    
+    # Add response
+    complaint.resolution_note = data.response_content
+    if data.new_status:
+        complaint.status = data.new_status
+    else:
+        complaint.status = ComplaintStatus.PROCESSING
+    
+    db.add(complaint)
+    await db.commit()
+    
+    # Return reporters to notify
+    return {
+        "status": "success",
+        "message": "Response added successfully",
+        "reporters_to_notify": complaint.reporter_list or [],
+        "complaint_id": id
+    }

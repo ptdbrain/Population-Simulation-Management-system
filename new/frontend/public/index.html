@@ -13,6 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="login.css">
 </head>
 
 <body>
@@ -33,8 +34,16 @@
                 <p class="login-brand-subtitle">Hệ thống Quản lý Cư dân</p>
             </div>
 
+            <!-- Auth Tabs -->
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" id="login-tab" onclick="switchAuthTab('login')">Đăng
+                    nhập</button>
+                <button type="button" class="auth-tab" id="register-tab" onclick="switchAuthTab('register')">Đăng
+                    ký</button>
+            </div>
+
             <!-- Login Form -->
-            <form class="login-form" onsubmit="login(); return false;">
+            <form class="login-form" id="login-form" onsubmit="login(); return false;">
                 <div class="login-input-group">
                     <label class="login-label">Tên đăng nhập</label>
                     <div class="login-input-wrapper">
@@ -61,6 +70,95 @@
                 <p id="login-error" class="login-error"></p>
             </form>
 
+            <!-- Register Form -->
+            <form class="login-form" id="register-form" style="display: none;" onsubmit="register(); return false;">
+                <div class="login-input-group">
+                    <label class="login-label">Tên đăng nhập</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">👤</span>
+                        <input type="text" id="reg-username" class="login-input" placeholder="Chọn tên đăng nhập">
+                    </div>
+                </div>
+
+                <div class="login-input-group">
+                    <label class="login-label">Mật khẩu</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">🔒</span>
+                        <input type="password" id="reg-password" class="login-input" placeholder="Tạo mật khẩu">
+                    </div>
+                </div>
+
+                <div class="login-input-group">
+                    <label class="login-label">Vai trò</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">👥</span>
+                        <select id="reg-role" class="login-input" onchange="toggleRoleFields()">
+                            <option value="resident">Cư dân</option>
+                            <option value="leader">Tổ trưởng</option>
+                            <option value="admin">Quản trị viên</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- CCCD Field (for citizen) -->
+                <div class="login-input-group" id="cccd-field">
+                    <label class="login-label">Số CCCD</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">🪪</span>
+                        <input type="text" id="reg-cccd" class="login-input" placeholder="Nhập 12 số CCCD"
+                            maxlength="12" onblur="checkCCCD()">
+                    </div>
+                    <p id="cccd-status" style="font-size: 12px; margin-top: 4px; color: #64748b;"></p>
+                </div>
+
+                <!-- New Resident Info Fields (shown when CCCD is new) -->
+                <div id="new-resident-fields" style="display: none;">
+                    <div class="login-input-group">
+                        <label class="login-label">Họ và tên *</label>
+                        <div class="login-input-wrapper">
+                            <span class="login-input-icon">📝</span>
+                            <input type="text" id="reg-fullname" class="login-input"
+                                placeholder="Nhập họ và tên đầy đủ">
+                        </div>
+                    </div>
+                    <div class="login-input-group">
+                        <label class="login-label">Ngày sinh *</label>
+                        <div class="login-input-wrapper">
+                            <span class="login-input-icon">📅</span>
+                            <input type="date" id="reg-dob" class="login-input">
+                        </div>
+                    </div>
+                    <div class="login-input-group">
+                        <label class="login-label">Giới tính *</label>
+                        <div class="login-input-wrapper">
+                            <span class="login-input-icon">⚥</span>
+                            <select id="reg-gender" class="login-input">
+                                <option value="">-- Chọn giới tính --</option>
+                                <option value="MALE">Nam</option>
+                                <option value="FEMALE">Nữ</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Verification Code Field (for admin/leader) -->
+                <div class="login-input-group" id="verification-field" style="display: none;">
+                    <label class="login-label">Mã xác minh</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon">🔑</span>
+                        <input type="text" id="reg-code" class="login-input" placeholder="Nhập mã xác minh">
+                    </div>
+                </div>
+
+                <button type="submit" class="login-btn">
+                    <span>Đăng ký</span>
+                    <span class="login-btn-icon">→</span>
+                </button>
+
+                <p id="register-error" class="login-error"></p>
+                <p id="register-success" class="login-success"></p>
+            </form>
+
             <!-- Footer -->
             <div class="login-footer">
                 <p>© 2024 Resi-Manager. Bảo mật & An toàn.</p>
@@ -76,19 +174,23 @@
             RESI-MANAGER
         </div>
         <div class="nav-menu">
-            <a href="#" class="nav-item active" onclick="switchTab('statistics')">
+            <a href="#" class="nav-item active" onclick="switchTab('statistics')" data-tab="statistics">
                 <span class="nav-icon">📊</span> Tổng quan
             </a>
-            <a href="#" class="nav-item" onclick="switchTab('households')">
+            <a href="#" class="nav-item" onclick="switchTab('households')" data-tab="households">
                 <span class="nav-icon">🏠</span> Quản lý Hộ khẩu
             </a>
-            <a href="#" class="nav-item" onclick="switchTab('persons')">
+            <a href="#" class="nav-item" onclick="switchTab('persons')" data-tab="persons">
                 <span class="nav-icon">👥</span> Quản lý Nhân khẩu
             </a>
-            <a href="#" class="nav-item" onclick="switchTab('temporary')">
+            <a href="#" class="nav-item" onclick="switchTab('my-household')" data-tab="my-household"
+                id="nav-my-household" style="display: none;">
+                <span class="nav-icon">🏡</span> Hộ khẩu của tôi
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('temporary')" data-tab="temporary">
                 <span class="nav-icon">📋</span> Tạm trú / Tạm vắng
             </a>
-            <a href="#" class="nav-item" onclick="switchTab('complaints')">
+            <a href="#" class="nav-item" onclick="switchTab('complaints')" data-tab="complaints">
                 <span class="nav-icon">📢</span> Phản ánh / Kiến nghị
                 <span class="nav-badge" id="complaints-count">3</span>
             </a>
@@ -114,6 +216,8 @@
                     <input type="text" class="search-input" placeholder="Tìm kiếm cư dân, hộ khẩu..."
                         id="global-search">
                 </div>
+                <button class="btn-icon" id="btn-view-requests" onclick="showPendingRequests()"
+                    title="Xem yêu cầu chờ duyệt" style="display: none;">📋</button>
                 <button class="btn-icon">🔔</button>
                 <button class="btn-primary" onclick="showAddModal()">
                     <span>+</span> Thêm mới
@@ -126,6 +230,24 @@
 
             <!-- 1. STATISTICS DASHBOARD (Default) -->
             <div id="tab-statistics" class="tab-content active">
+                <!-- Statistics Filter Bar -->
+                <div class="stats-filter-bar"
+                    style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <label style="font-weight: 500; color: #475569;">📅 Năm:</label>
+                        <select id="stats-year-filter" class="form-control" style="width: 120px;"
+                            onchange="loadStatistics()">
+                            <!-- Years will be populated by JS -->
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="exportStatistics()" style="padding: 8px 16px;">
+                        📊 Xuất báo cáo
+                    </button>
+                    <button class="btn-secondary" onclick="printStatistics()" style="padding: 8px 16px;">
+                        🖨️ In thống kê
+                    </button>
+                </div>
+
                 <div class="dashboard-grid">
                     <!-- Row 1: KPI Cards -->
                     <div class="kpi-row">
@@ -163,28 +285,88 @@
                         </div>
                     </div>
 
-                    <!-- Row 2: Charts -->
+                    <!-- Row 2: Detailed Temp Status Cards -->
+                    <div class="kpi-row" id="temp-status-row" style="margin-top: 16px;">
+                        <div class="kpi-card"
+                            style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-left: 4px solid #f59e0b;">
+                            <div class="kpi-icon-box" style="background: #f59e0b;">📤</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label" style="color: #92400e;">Tạm vắng chi tiết</div>
+                                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #b45309;"
+                                            id="absent-pending">0</div>
+                                        <div style="font-size: 11px; color: #92400e;">Chờ duyệt</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #059669;"
+                                            id="absent-approved">0</div>
+                                        <div style="font-size: 11px; color: #92400e;">Đã duyệt</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #0284c7;"
+                                            id="absent-active">0</div>
+                                        <div style="font-size: 11px; color: #92400e;">Đang vắng</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="kpi-card"
+                            style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border-left: 4px solid #3b82f6;">
+                            <div class="kpi-icon-box" style="background: #3b82f6;">📥</div>
+                            <div class="kpi-info">
+                                <div class="kpi-label" style="color: #1e40af;">Tạm trú chi tiết</div>
+                                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #b45309;"
+                                            id="tempres-pending">0</div>
+                                        <div style="font-size: 11px; color: #1e40af;">Chờ duyệt</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #059669;"
+                                            id="tempres-approved">0</div>
+                                        <div style="font-size: 11px; color: #1e40af;">Đã duyệt</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: 700; color: #0284c7;"
+                                            id="tempres-active">0</div>
+                                        <div style="font-size: 11px; color: #1e40af;">Đang trú</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 3: Charts -->
                     <div class="charts-row">
                         <!-- Demographics (Bar/Pyramid) -->
                         <div class="chart-card">
                             <div class="chart-header">
-                                <div class="chart-title">Phân bố độ tuổi</div>
+                                <div class="chart-title">📊 Phân bố độ tuổi</div>
                             </div>
                             <canvas id="age-chart"></canvas>
+                            <div id="age-stats-summary"
+                                style="margin-top: 12px; padding: 12px; background: #f1f5f9; border-radius: 8px; font-size: 13px;">
+                                <!-- JS will populate -->
+                            </div>
                         </div>
-                        <!-- Residency Ratio (Donut) -->
+                        <!-- Gender Ratio (Donut) -->
                         <div class="chart-card">
                             <div class="chart-header">
-                                <div class="chart-title">Tỉ lệ Giới tính</div>
+                                <div class="chart-title">⚤ Tỉ lệ Giới tính</div>
                             </div>
                             <canvas id="gender-chart" style="max-height: 250px;"></canvas>
+                            <div id="gender-stats-summary"
+                                style="margin-top: 12px; padding: 12px; background: #f1f5f9; border-radius: 8px; font-size: 13px;">
+                                <!-- JS will populate -->
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Row 3: Complaint Trends -->
+                    <!-- Row 4: Complaint Trends -->
                     <div class="chart-card">
                         <div class="chart-header">
-                            <div class="chart-title">Xu hướng phản ánh theo Quý</div>
+                            <div class="chart-title">📈 Xu hướng phản ánh theo Quý</div>
                         </div>
                         <canvas id="complaints-chart" style="max-height: 250px;"></canvas>
                     </div>
@@ -214,6 +396,15 @@
 
             <!-- 3. PERSONS MANAGEMENT -->
             <div id="tab-persons" class="tab-content">
+                <!-- Filter and Search Bar -->
+                <div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center;">
+                    <select class="form-control" style="width: 250px;" id="household-filter" onchange="filterPersons()">
+                        <option value="">-- Tất cả hộ khẩu --</option>
+                        <!-- JS Generated -->
+                    </select>
+                    <input type="text" class="form-control" style="width: 300px;" id="persons-search-input"
+                        placeholder="Tìm theo tên hoặc CCCD..." onkeyup="searchPersons()">
+                </div>
                 <div class="table-card">
                     <table class="data-table" id="persons-table">
                         <thead>
@@ -235,44 +426,137 @@
                 <div id="persons-pagination-container"></div>
             </div>
 
+            <!-- 3.5. MY HOUSEHOLD (For Residents Only) -->
+            <div id="tab-my-household" class="tab-content">
+                <!-- My Profile Section -->
+                <div class="kpi-row" style="margin-bottom: 24px;">
+                    <div class="kpi-card" style="flex: 2;">
+                        <div class="kpi-icon-box">👤</div>
+                        <div class="kpi-info">
+                            <div class="kpi-label">Thông tin của tôi</div>
+                            <div id="my-profile-name" class="kpi-value" style="font-size: 1.5rem;">-</div>
+                            <div id="my-profile-details" class="kpi-trend">CCCD: - | Ngày sinh: -</div>
+                        </div>
+                    </div>
+                    <div class="kpi-card" style="flex: 1;">
+                        <div class="kpi-icon-box">🏠</div>
+                        <div class="kpi-info">
+                            <div class="kpi-label">Số hộ khẩu</div>
+                            <div id="my-household-code" class="kpi-value" style="font-size: 1.3rem;">-</div>
+                            <div id="my-household-address" class="kpi-trend">Địa chỉ: -</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Family Members Section -->
+                <div class="chart-card" style="margin-bottom: 24px;">
+                    <div class="chart-header">
+                        <span class="chart-title">👨‍👩‍👧‍👦 Thành viên trong hộ</span>
+                    </div>
+                    <table class="data-table" id="my-family-table">
+                        <thead>
+                            <tr>
+                                <th>Họ và Tên</th>
+                                <th>CCCD</th>
+                                <th>Ngày sinh</th>
+                                <th>Giới tính</th>
+                                <th>Quan hệ với chủ hộ</th>
+                                <th>Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- JS Generated -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- My Requests Section -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <span class="chart-title">📝 Yêu cầu của tôi</span>
+                        <button class="btn-primary" onclick="showRequestModal()"
+                            style="padding: 6px 12px; font-size: 13px;">
+                            + Tạo yêu cầu mới
+                        </button>
+                    </div>
+                    <table class="data-table" id="my-requests-table">
+                        <thead>
+                            <tr>
+                                <th>Loại yêu cầu</th>
+                                <th>Tiêu đề</th>
+                                <th>Ngày tạo</th>
+                                <th>Trạng thái</th>
+                                <th>Ghi chú</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- JS Generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- 4. TEMPORARY RESIDENCE/ABSENCE -->
             <div id="tab-temporary" class="tab-content">
                 <!-- Sub tabs -->
-                <div style="margin-bottom: 24px; border-bottom: 1px solid #e2e8f0;">
-                    <button class="btn-primary"
-                        style="background:transparent; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding: 8px 16px; border-radius: 0;">Tạm
-                        vắng</button>
-                    <!-- Simplified sub-tab logic for now, handled in app.js switching -->
+                <div style="margin-bottom: 24px; display: flex; gap: 12px; border-bottom: 1px solid #e2e8f0;">
+                    <button class="sub-tab active" onclick="switchSubTab('absent')"
+                        style="background:transparent; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding: 8px 16px; border-radius: 0; cursor: pointer;">
+                        📤 Tạm vắng
+                    </button>
+                    <button class="sub-tab" onclick="switchSubTab('residence')"
+                        style="background:transparent; color: #64748b; border-bottom: 2px solid transparent; padding: 8px 16px; border-radius: 0; cursor: pointer;">
+                        📥 Tạm trú
+                    </button>
                 </div>
 
-                <div class="split-layout">
+                <!-- Absent Requests Section -->
+                <div id="absent-subtab" class="subtab-content">
                     <div class="chart-card">
                         <div class="chart-header">
-                            <span class="chart-title">Danh sách Tạm vắng</span>
+                            <span class="chart-title">📤 Danh sách Tạm vắng</span>
+                            <button class="btn-primary" onclick="addAbsentRequest()"
+                                style="padding: 6px 12px; font-size: 13px;">
+                                + Thêm tạm vắng
+                            </button>
                         </div>
                         <table class="data-table" id="absent-table">
                             <thead>
                                 <tr>
                                     <th>Cư dân</th>
+                                    <th>Ngày bắt đầu</th>
+                                    <th>Ngày kết thúc</th>
                                     <th>Lý do</th>
-                                    <th>Thời gian</th>
+                                    <th>Địa điểm đến</th>
                                     <th>Trạng thái</th>
+                                    <th class="text-right">Tác vụ</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Temp Residence Section -->
+                <div id="residence-subtab" class="subtab-content hidden">
                     <div class="chart-card">
                         <div class="chart-header">
-                            <span class="chart-title">Danh sách Tạm trú</span>
+                            <span class="chart-title">📥 Danh sách Tạm trú</span>
+                            <button class="btn-primary" onclick="addTempResidence()"
+                                style="padding: 6px 12px; font-size: 13px;">
+                                + Thêm tạm trú
+                            </button>
                         </div>
                         <table class="data-table" id="temp-res-table">
                             <thead>
                                 <tr>
                                     <th>Họ tên</th>
-                                    <th>Từ nơi</th>
-                                    <th>Lý do</th>
+                                    <th>Ngày sinh</th>
+                                    <th>Địa chỉ gốc</th>
+                                    <th>Hộ tiếp nhận</th>
+                                    <th>Thời gian</th>
                                     <th>Trạng thái</th>
+                                    <th class="text-right">Tác vụ</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
@@ -283,7 +567,7 @@
 
             <!-- 5. COMPLAINTS CENTER -->
             <div id="tab-complaints" class="tab-content">
-                <div style="display: flex; gap: 16px; margin-bottom: 24px;">
+                <div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center;">
                     <select class="form-control" style="width: 200px;" id="complaint-category-filter"
                         onchange="filterComplaints()">
                         <option value="">Tất cả danh mục</option>
@@ -294,19 +578,23 @@
                     <select class="form-control" style="width: 200px;" id="complaint-status-filter"
                         onchange="filterComplaints()">
                         <option value="">Tất cả trạng thái</option>
-                        <option value="PENDING">Chờ xử lý</option>
+                        <option value="NEW">Mới</option>
+                        <option value="PROCESSING">Đang xử lý</option>
                         <option value="RESOLVED">Đã giải quyết</option>
                     </select>
+                    <button class="btn-primary" onclick="addComplaint()" style="margin-left: auto;">
+                        + Thêm phản ánh
+                    </button>
                 </div>
 
                 <div class="table-card">
                     <table class="data-table" id="complaints-table">
                         <thead>
                             <tr>
-                                <th style="width: 40%">Nội dung phản ánh</th>
-                                <th>Danh mục</th>
-                                <th>Mức độ (Reports)</th>
-                                <th>Ngày tạo</th>
+                                <th>Người phản ánh</th>
+                                <th style="width: 35%">Nội dung phản ánh</th>
+                                <th>Phân loại</th>
+                                <th>Ngày phản ánh</th>
                                 <th>Trạng thái</th>
                                 <th class="text-right">Tác vụ</th>
                             </tr>
@@ -319,7 +607,7 @@
         </main>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2024122821"></script>
 </body>
 
 </html>

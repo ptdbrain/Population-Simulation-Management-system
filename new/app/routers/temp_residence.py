@@ -79,19 +79,20 @@ async def create_temp_residence(req: TempResidenceCreate, db: AsyncSession = Dep
     return {"status": "success", "id": new_reg.id}
 
 @router.post("/temp-residences/{id}/approve", dependencies=[Depends(PermissionChecker("temp_residence.approve"))])
-async def approve_temp_residence(id: int, db: AsyncSession = Depends(get_db)):
+async def approve_temp_residence(id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Approval logic for Temp Residence usually involves adding a record to Residents table with status=TEMPORARY_RESIDENT
     # This aligns the systems.
     
     reg = await db.get(TempResidenceRegistration, id)
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
+    
+    # Update registration status
+    reg.status = RequestStatus.APPROVED
+    reg.approved_by = current_user.id
+    db.add(reg)
         
     # Create a Resident record
-    # Note: We need Gender and CID for Resident, but Temp schema didn't rely on them strictly in user req?
-    # We will assume incomplete data or add default/nulls. 
-    # For strictness, let's create a Resident with status TEMPORARY_RESIDENT
-    
     temp_resident = Resident(
         full_name=reg.full_name,
         dob=reg.dob,
@@ -104,6 +105,64 @@ async def approve_temp_residence(id: int, db: AsyncSession = Depends(get_db)):
     db.add(temp_resident)
     await db.commit()
     return {"status": "approved", "resident_id": temp_resident.id}
+
+# --- Reject Endpoints ---
+class RejectRequest(BaseModel):
+    reason: Optional[str] = None
+
+@router.post("/absent-requests/{id}/reject", dependencies=[Depends(PermissionChecker("temp_absence.approve"))])
+async def reject_absent_request(id: int, reject_data: RejectRequest = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    req = await db.get(AbsentRequest, id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    req.status = RequestStatus.REJECTED
+    req.approved_by = current_user.id
+    db.add(req)
+    await db.commit()
+    return {"status": "rejected"}
+
+@router.post("/temp-residences/{id}/reject", dependencies=[Depends(PermissionChecker("temp_residence.approve"))])
+async def reject_temp_residence(id: int, reject_data: RejectRequest = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    reg = await db.get(TempResidenceRegistration, id)
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    
+    reg.status = RequestStatus.REJECTED
+    reg.approved_by = current_user.id
+    db.add(reg)
+    await db.commit()
+    return {"status": "rejected"}
+
+# --- Certificate Generation ---
+@router.get("/absent-requests/{id}/certificate", dependencies=[Depends(PermissionChecker("temp_absence.approve"))])
+async def generate_absent_certificate(id: int, db: AsyncSession = Depends(get_db)):
+    """Generate a certificate for an approved absent request"""
+    req = await db.get(AbsentRequest, id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    if req.status != RequestStatus.APPROVED:
+        raise HTTPException(status_code=400, detail="Certificate can only be generated for approved requests")
+    
+    # Get resident info
+    resident = await db.get(Resident, req.resident_id)
+    if not resident:
+        raise HTTPException(status_code=404, detail="Resident not found")
+    
+    # Return certificate data (frontend will format and display/print)
+    return {
+        "certificate_type": "TEMPORARY_ABSENCE",
+        "resident_name": resident.full_name,
+        "resident_cid": resident.cid,
+        "resident_dob": str(resident.dob),
+        "start_date": str(req.start_date),
+        "end_date": str(req.end_date),
+        "destination": req.destination,
+        "reason": req.reason,
+        "issue_date": str(date.today()),
+        "request_id": req.id
+    }
 
 # --- GET Endpoints for Frontend ---
 @router.get("/absent-requests")

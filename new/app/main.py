@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, household, complaint, person, stats, temp_residence
+from app.routers import auth, household, complaint, person, stats, temp_residence, request, my_data
 from app.database import engine
 from app.models.base import Base
 # Import all models to register them with Base.metadata
-from app.models import auth_models, residence_models, temp_models, complaint_models
+from app.models import auth_models, residence_models, temp_models, complaint_models, request_models
 from app.worker import start_scheduler
 from fastapi.staticfiles import StaticFiles
 import os
@@ -27,6 +27,8 @@ app.include_router(complaint.router, prefix="/api")
 app.include_router(person.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(temp_residence.router, prefix="/api")
+app.include_router(request.router, prefix="/api")
+app.include_router(my_data.router, prefix="/api")
 
 # Mount Frontend
 # We mount it AFTER the routers so that API routes take priority

@@ -59,23 +59,65 @@ async def create_person(person: ResidentCreate, db: AsyncSession = Depends(get_d
     await db.refresh(new_person)
     return new_person
 
-@router.get("/", response_model=List[ResidentResponse], dependencies=[Depends(PermissionChecker("person.view"))])
+@router.get("/", dependencies=[Depends(PermissionChecker("person.view"))])
 async def list_persons(
-    skip: int = 0, 
-    limit: int = 100, 
+    page: int = 1,
+    limit: int = 10,
     household_id: Optional[int] = None,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
+    # Build base query
     query = select(Resident)
     if household_id:
         query = query.where(Resident.household_id == household_id)
     if search:
-        query = query.where(Resident.full_name.ilike(f"%{search}%") | Resident.cid.ilike(f"%{search}%"))
+        query = query.where(
+            Resident.full_name.ilike(f"%{search}%") | 
+            Resident.cid.ilike(f"%{search}%")
+        )
+    
+    # Get total count
+    from sqlalchemy import func as sql_func
+    count_query = select(sql_func.count()).select_from(Resident)
+    if household_id:
+        count_query = count_query.where(Resident.household_id == household_id)
+    if search:
+        count_query = count_query.where(
+            Resident.full_name.ilike(f"%{search}%") | 
+            Resident.cid.ilike(f"%{search}%")
+        )
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Calculate pagination
+    total_pages = (total + limit - 1) // limit if total > 0 else 1
+    page = max(1, min(page, total_pages))  # Ensure valid page
+    skip = (page - 1) * limit
         
+    # Get paginated data
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    persons = result.scalars().all()
+    
+    return {
+        "items": [
+            {
+                "id": p.id,
+                "full_name": p.full_name,
+                "dob": p.dob.isoformat() if p.dob else None,
+                "gender": p.gender.value if hasattr(p.gender, 'value') else str(p.gender),
+                "cid": p.cid,
+                "relation_to_owner": p.relation_to_owner,
+                "status": p.status.value if hasattr(p.status, 'value') else str(p.status),
+                "household_id": p.household_id
+            } for p in persons
+        ],
+        "total": total,
+        "page": page,
+        "pages": total_pages,
+        "limit": limit
+    }
 
 @router.get("/{id}", response_model=ResidentResponse, dependencies=[Depends(PermissionChecker("person.view"))])
 async def get_person(id: int, db: AsyncSession = Depends(get_db)):

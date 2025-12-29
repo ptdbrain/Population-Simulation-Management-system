@@ -28,3 +28,5 @@ class TempResidenceRegistration(Base):
     start_date = Column(Date)
     end_date = Column(Date)
     reason = Column(String(255))
+    status = Column(Enum(RequestStatus), default=RequestStatus.PENDING)
+    approved_by = Column(Integer, ForeignKey('users.id'), nullable=True)
