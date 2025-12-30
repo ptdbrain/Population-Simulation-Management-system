@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+residence_db/
+frontend/node_modules/
+.git/
+.gitignore
+README.md
+test_*.py
+verify_full.py
+seed_data.py
+seed_sync.py

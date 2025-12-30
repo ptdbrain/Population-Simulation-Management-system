@@ -23,6 +23,7 @@ class TempResidenceRegistration(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String(150))
     dob = Column(Date)
+    gender = Column(String(10), default="MALE")  # MALE or FEMALE
     origin_address = Column(String(255))
     host_household_id = Column(Integer, ForeignKey('households.id'))
     start_date = Column(Date)
@@ -30,3 +31,4 @@ class TempResidenceRegistration(Base):
     reason = Column(String(255))
     status = Column(Enum(RequestStatus), default=RequestStatus.PENDING)
     approved_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+

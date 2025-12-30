@@ -146,3 +146,66 @@ async def respond_to_complaint(id: int, data: ComplaintResponse, db: AsyncSessio
         "reporters_to_notify": complaint.reporter_list or [],
         "complaint_id": id
     }
+
+
+# Satisfaction Rating Schema
+class RatingRequest(BaseModel):
+    rating: int  # 1-5 stars
+    comment: Optional[str] = None
+
+
+@router.post("/{id}/rate")
+async def rate_complaint(
+    id: int, 
+    data: RatingRequest, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Rate a resolved complaint (satisfaction rating 1-5 stars).
+    Only the original reporter(s) can rate.
+    Only resolved complaints can be rated.
+    """
+    complaint = await db.get(Complaint, id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    
+    # Check if complaint is resolved
+    if complaint.status != ComplaintStatus.RESOLVED:
+        raise HTTPException(status_code=400, detail="Chỉ có thể đánh giá phản ánh đã được giải quyết")
+    
+    # Check if already rated
+    if complaint.satisfaction_rating is not None:
+        raise HTTPException(status_code=400, detail="Phản ánh này đã được đánh giá")
+    
+    # Check if user is a reporter
+    is_reporter = False
+    if complaint.reporter_id == current_user.id:
+        is_reporter = True
+    elif complaint.reporter_list:
+        for r in complaint.reporter_list:
+            if r.get('user_id') == current_user.id:
+                is_reporter = True
+                break
+    
+    if not is_reporter:
+        raise HTTPException(status_code=403, detail="Chỉ người gửi phản ánh mới có thể đánh giá")
+    
+    # Validate rating
+    if data.rating < 1 or data.rating > 5:
+        raise HTTPException(status_code=400, detail="Đánh giá phải từ 1 đến 5 sao")
+    
+    # Update complaint
+    complaint.satisfaction_rating = data.rating
+    complaint.rating_comment = data.comment
+    complaint.rated_at = datetime.utcnow()
+    
+    db.add(complaint)
+    await db.commit()
+    
+    return {
+        "status": "success",
+        "message": "Cảm ơn bạn đã đánh giá!",
+        "rating": data.rating
+    }
+

@@ -23,3 +23,8 @@ class Complaint(Base):
     reporter_list = Column(JSON, default=list) # Stores list of who reported it
     resolution_note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
+    # Satisfaction rating (1-5 stars) after resolution
+    satisfaction_rating = Column(Integer, nullable=True)
+    rating_comment = Column(Text, nullable=True)
+    rated_at = Column(DateTime, nullable=True)
+

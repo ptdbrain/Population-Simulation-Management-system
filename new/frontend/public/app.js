@@ -50,6 +50,7 @@ function formatDate(dateString) {
     return `${day}/${month}/${year}`;
 }
 
+
 // ==========================================
 // API UTILITIES
 // ==========================================
@@ -63,7 +64,7 @@ async function apiCall(endpoint, options = {}) {
     // Add trailing slash if endpoint is a collection route (no path params after)
     // This fixes FastAPI 404 issues for routes like /households vs /households/
     // Must check before query parameters
-    const collectionRoutes = ['/households', '/persons', '/complaints'];
+    const collectionRoutes = ['/households', '/persons', '/complaints', '/questions', '/reminders'];
     for (const route of collectionRoutes) {
         const fullRoute = API_BASE + route;
         if (url.startsWith(fullRoute)) {
@@ -459,7 +460,113 @@ function showDashboard() {
 
     // Apply role-based visibility
     applyRoleBasedUI();
+
+    // Load notifications
+    loadNotifications();
 }
+
+// ==========================================
+// NOTIFICATION SYSTEM
+// ==========================================
+
+async function loadNotifications() {
+    try {
+        const notifications = await apiCall('/my/notifications');
+        if (notifications) {
+            renderNotificationDropdown(notifications);
+            updateNotificationBadge(notifications);
+        }
+    } catch (error) {
+        console.log('Notifications not available:', error.message);
+    }
+}
+
+function renderNotificationDropdown(notifications) {
+    const container = document.getElementById('notification-list');
+    if (!container) return;
+
+    if (!notifications || notifications.length === 0) {
+        container.innerHTML = '<div style="padding: 24px; text-align: center; color: #64748b;">Không có thông báo mới</div>';
+        return;
+    }
+
+    container.innerHTML = notifications.slice(0, 10).map(n => `
+        <div class="notification-item" data-id="${n.id}" onclick="viewNotification(${n.id})"
+             style="padding: 12px 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; ${!n.is_read ? 'background: #f0f9ff;' : ''}">
+            <div style="display: flex; gap: 12px;">
+                <div style="font-size: 20px;">${getNotificationIcon(n.type)}</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: ${!n.is_read ? '600' : '400'}; color: #1e293b; font-size: 13px;">${n.title}</div>
+                    <div style="color: #64748b; font-size: 12px; margin-top: 2px;">${formatTimeAgo(n.created_at)}</div>
+                </div>
+                ${!n.is_read ? '<div style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; margin-top: 4px;"></div>' : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function getNotificationIcon(type) {
+    const icons = {
+        'INFO': 'ℹ️',
+        'REMINDER': '⏰',
+        'REQUEST': '📋',
+        'COMPLAINT': '📢',
+        'SYSTEM': '⚙️'
+    };
+    return icons[type] || '🔔';
+}
+
+function updateNotificationBadge(notifications) {
+    const badge = document.getElementById('notification-badge');
+    if (!badge) return;
+
+    const unreadCount = notifications.filter(n => !n.is_read).length;
+    badge.textContent = unreadCount;
+    badge.style.display = unreadCount > 0 ? 'block' : 'none';
+}
+
+function toggleNotificationDropdown() {
+    const dropdown = document.getElementById('notification-dropdown');
+    if (dropdown) {
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+async function viewNotification(id) {
+    try {
+        await apiCall(`/my/notifications/${id}/read`, 'PUT');
+        loadNotifications();
+    } catch (error) {
+        console.log('Could not mark notification as read:', error.message);
+    }
+}
+
+function formatTimeAgo(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now - date;
+
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 60) return `${minutes} phút trước`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} giờ trước`;
+
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days} ngày trước`;
+
+    return formatDate(dateStr);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function (e) {
+    const dropdown = document.getElementById('notification-dropdown');
+    const btn = document.getElementById('btn-notifications');
+    if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
 
 function updateUserDisplay() {
     if (State.user) {
@@ -490,12 +597,20 @@ function applyRoleBasedUI() {
     // Admin/Leader tabs to hide for residents
     const adminOnlyTabs = ['statistics', 'households', 'persons'];
 
+    // Tabs only for admin (not even leader)
+    const adminExclusiveTabs = ['users'];
+
     navItems.forEach(item => {
         const dataTab = item.getAttribute('data-tab') || '';
 
         // Hide admin-only tabs for residents
         if (adminOnlyTabs.includes(dataTab)) {
             item.style.display = (role === 'resident') ? 'none' : 'flex';
+        }
+
+        // Hide admin-exclusive tabs for non-admins
+        if (adminExclusiveTabs.includes(dataTab)) {
+            item.style.display = (role === 'admin') ? 'flex' : 'none';
         }
 
         // Show my-household only for residents
@@ -916,6 +1031,11 @@ async function rejectRequest(id) {
 // ==========================================
 
 function switchTab(tabName) {
+    // Close all open modals when switching tabs
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.style.display = 'none';
+    });
+
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
         // Use data-tab attribute for matching
@@ -939,7 +1059,9 @@ function switchTab(tabName) {
             'persons': 'Quản lý Nhân khẩu',
             'my-household': 'Hộ khẩu của tôi',
             'temporary': 'Quản lý Tạm trú / Tạm vắng',
-            'complaints': 'Phản ánh & Kiến nghị'
+            'complaints': 'Phản ánh & Kiến nghị',
+            'questions': 'Hỏi đáp với Tổ trưởng / Admin',
+            'reminders': 'Nhắc nhở thông minh'
         };
         document.getElementById('page-title').textContent = pageTitles[tabName] || 'Dashboard';
     }
@@ -957,6 +1079,297 @@ function switchTab(tabName) {
         loadComplaints();
     } else if (tabName === 'statistics') {
         loadStatistics();
+    } else if (tabName === 'questions') {
+        loadQuestions();
+    } else if (tabName === 'reminders') {
+        loadReminders();
+    } else if (tabName === 'users') {
+        loadUsers();
+        loadRolesFilter();
+    }
+}
+
+// ==========================================
+// USER MANAGEMENT (Admin Only)
+// ==========================================
+
+let usersData = [];
+let rolesData = [];
+
+async function loadUsers() {
+    try {
+        showLoading();
+        const roleId = document.getElementById('user-role-filter')?.value || '';
+        const isActive = document.getElementById('user-status-filter')?.value || '';
+
+        let url = '/admin/users';
+        const params = new URLSearchParams();
+        if (roleId) params.append('role_id', roleId);
+        if (isActive) params.append('is_active', isActive);
+        if (params.toString()) url += '?' + params.toString();
+
+        const users = await apiCall(url);
+        if (users) {
+            usersData = users;
+            renderUsersTable(users);
+        }
+    } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Chỉ admin mới có quyền truy cập', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadRolesFilter() {
+    try {
+        const roles = await apiCall('/admin/roles');
+        if (roles) {
+            rolesData = roles;
+            const select = document.getElementById('user-role-filter');
+            if (select) {
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">Tất cả vai trò</option>' +
+                    roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+                select.value = currentValue;
+            }
+        }
+    } catch (error) {
+        console.log('Could not load roles');
+    }
+}
+
+function filterUsers() {
+    loadUsers();
+}
+
+function renderUsersTable(users) {
+    const tbody = document.querySelector('#users-table tbody');
+    if (!tbody) return;
+
+    if (!users || users.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center" style="padding: 40px;">
+                    <div class="empty-state-icon">👥</div>
+                    <p>Không tìm thấy người dùng</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const roleColors = {
+        'admin': '#ef4444',
+        'leader': '#3b82f6',
+        'resident': '#10b981'
+    };
+
+    const roleLabels = {
+        'admin': 'Admin',
+        'leader': 'Tổ trưởng',
+        'resident': 'Cư dân'
+    };
+
+    tbody.innerHTML = users.map(u => {
+        const roleColor = roleColors[u.role_name?.toLowerCase()] || '#64748b';
+        const roleLabel = roleLabels[u.role_name?.toLowerCase()] || u.role_name || 'N/A';
+        const statusClass = u.is_active ? 'badge-success' : 'badge-danger';
+        const statusText = u.is_active ? 'Hoạt động' : 'Vô hiệu hóa';
+
+        let actions = `
+            <button class="icon-btn" onclick="showEditUserModal(${u.id})" title="Sửa">✏️</button>
+        `;
+
+        // Can't edit self
+        if (u.id !== State.user?.user_id) {
+            if (u.is_active) {
+                actions += `<button class="icon-btn" onclick="toggleUserStatus(${u.id}, false)" title="Vô hiệu hóa" style="color: var(--warning);">⛔</button>`;
+            } else {
+                actions += `<button class="icon-btn" onclick="toggleUserStatus(${u.id}, true)" title="Kích hoạt" style="color: var(--success);">✓</button>`;
+            }
+            actions += `<button class="icon-btn" onclick="confirmDeleteUser(${u.id})" title="Xóa" style="color: var(--danger);">🗑️</button>`;
+        }
+
+        return `
+            <tr>
+                <td><strong>${u.username}</strong></td>
+                <td><span class="badge" style="background-color: ${roleColor}; color: white;">${roleLabel}</span></td>
+                <td>${u.resident_name || '<span style="color: #94a3b8;">Chưa liên kết</span>'}</td>
+                <td><span class="badge ${statusClass}">${statusText}</span></td>
+                <td class="text-right">
+                    <div class="action-icons">${actions}</div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function showCreateUserModal() {
+    // Load roles first
+    if (rolesData.length === 0) {
+        await loadRolesFilter();
+    }
+
+    const roleOptions = rolesData.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+
+    showModal('👤 Thêm người dùng mới', `
+        <form id="create-user-form">
+            <div class="form-group">
+                <label class="form-label">Tên đăng nhập *</label>
+                <input type="text" class="form-control" id="new-username" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mật khẩu *</label>
+                <input type="password" class="form-control" id="new-password" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Vai trò *</label>
+                <select class="form-control" id="new-role-id" required>
+                    ${roleOptions}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="new-is-active" checked> Kích hoạt ngay
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+                <button type="submit" class="btn-primary" onclick="createUser(); return false;">Tạo người dùng</button>
+            </div>
+        </form>
+    `);
+}
+
+async function createUser() {
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const roleId = document.getElementById('new-role-id').value;
+    const isActive = document.getElementById('new-is-active').checked;
+
+    if (!username || !password || !roleId) {
+        showToast('Vui lòng điền đầy đủ thông tin', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/admin/users', 'POST', {
+            username,
+            password,
+            role_id: parseInt(roleId),
+            is_active: isActive
+        });
+
+        if (result) {
+            showToast('Tạo người dùng thành công!', 'success');
+            closeModal();
+            loadUsers();
+        }
+    } catch (error) {
+        showToast('Lỗi: ' + error.message, 'error');
+    }
+}
+
+async function showEditUserModal(userId) {
+    const user = usersData.find(u => u.id === userId);
+    if (!user) {
+        showToast('Không tìm thấy người dùng', 'error');
+        return;
+    }
+
+    if (rolesData.length === 0) {
+        await loadRolesFilter();
+    }
+
+    const roleOptions = rolesData.map(r =>
+        `<option value="${r.id}" ${r.id === user.role_id ? 'selected' : ''}>${r.name}</option>`
+    ).join('');
+
+    const isSelf = userId === State.user?.user_id;
+
+    showModal('✏️ Sửa người dùng', `
+        <form id="edit-user-form">
+            <div class="form-group">
+                <label class="form-label">Tên đăng nhập</label>
+                <input type="text" class="form-control" id="edit-username" value="${user.username}" ${isSelf ? '' : ''}>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mật khẩu mới (để trống nếu không đổi)</label>
+                <input type="password" class="form-control" id="edit-password" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Vai trò</label>
+                <select class="form-control" id="edit-role-id" ${isSelf ? 'disabled' : ''}>
+                    ${roleOptions}
+                </select>
+                ${isSelf ? '<small style="color: #64748b;">Không thể thay đổi vai trò của chính mình</small>' : ''}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+                <button type="submit" class="btn-primary" onclick="updateUser(${userId}); return false;">Lưu thay đổi</button>
+            </div>
+        </form>
+    `);
+}
+
+async function updateUser(userId) {
+    const data = {};
+
+    const username = document.getElementById('edit-username').value.trim();
+    const password = document.getElementById('edit-password').value;
+    const roleSelect = document.getElementById('edit-role-id');
+
+    if (username) data.username = username;
+    if (password) data.password = password;
+    if (roleSelect && !roleSelect.disabled) data.role_id = parseInt(roleSelect.value);
+
+    try {
+        const result = await apiCall(`/admin/users/${userId}`, 'PUT', data);
+        if (result) {
+            showToast('Cập nhật thành công!', 'success');
+            closeModal();
+            loadUsers();
+        }
+    } catch (error) {
+        showToast('Lỗi: ' + error.message, 'error');
+    }
+}
+
+async function toggleUserStatus(userId, isActive) {
+    try {
+        const result = await apiCall(`/admin/users/${userId}/status?is_active=${isActive}`, 'PUT');
+        if (result) {
+            showToast(result.message, 'success');
+            loadUsers();
+        }
+    } catch (error) {
+        showToast('Lỗi: ' + error.message, 'error');
+    }
+}
+
+function confirmDeleteUser(userId) {
+    const user = usersData.find(u => u.id === userId);
+    showModal('⚠️ Xác nhận xóa', `
+        <p>Bạn có chắc chắn muốn xóa người dùng <strong>${user?.username || userId}</strong>?</p>
+        <p style="color: #ef4444;">Hành động này không thể hoàn tác!</p>
+        <div class="modal-footer">
+            <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+            <button type="button" class="btn-primary" style="background: #ef4444;" onclick="deleteUser(${userId})">Xóa</button>
+        </div>
+    `);
+}
+
+async function deleteUser(userId) {
+    try {
+        const result = await apiCall(`/admin/users/${userId}`, 'DELETE');
+        if (result) {
+            showToast('Đã xóa người dùng', 'success');
+            closeModal();
+            loadUsers();
+        }
+    } catch (error) {
+        showToast('Lỗi: ' + error.message, 'error');
     }
 }
 
@@ -972,13 +1385,72 @@ async function loadMyHouseholdData() {
             loadMyProfile(),
             loadMyHousehold(),
             loadMyFamily(),
-            loadMyRequests()
+            loadMyRequests(),
+            loadMyHistory()
         ]);
     } catch (error) {
         console.error('Error loading my household data:', error);
     } finally {
         hideLoading();
     }
+}
+
+async function loadMyHistory() {
+    try {
+        const history = await apiCall('/my/history');
+        if (history) {
+            renderPersonalHistory(history.personal || []);
+            renderHouseholdHistory(history.household || []);
+        }
+    } catch (error) {
+        console.log('History not available:', error.message);
+    }
+}
+
+function renderPersonalHistory(items) {
+    const container = document.getElementById('my-personal-history');
+    if (!container) return;
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: #64748b; text-align: center; padding: 16px;">Chưa có lịch sử thay đổi</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div style="display: flex; align-items: center; padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #3b82f6;">
+            <div style="flex: 1;">
+                <div style="font-weight: 600; color: #1e40af;">${item.change_type}</div>
+                <div style="color: #64748b; font-size: 12px;">${item.details || 'Không có chi tiết'}</div>
+            </div>
+            <div style="text-align: right; color: #64748b; font-size: 12px;">
+                <div>${formatDate(item.changed_at)}</div>
+                <div>bởi ${item.changed_by || 'Hệ thống'}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderHouseholdHistory(items) {
+    const container = document.getElementById('my-household-history');
+    if (!container) return;
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: #64748b; text-align: center; padding: 16px;">Chưa có lịch sử thay đổi</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div style="display: flex; align-items: center; padding: 12px; background: #f0fdf4; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #10b981;">
+            <div style="flex: 1;">
+                <div style="font-weight: 600; color: #047857;">${item.change_type}</div>
+                <div style="color: #64748b; font-size: 12px;">${item.details || 'Không có chi tiết'}</div>
+            </div>
+            <div style="text-align: right; color: #64748b; font-size: 12px;">
+                <div>${formatDate(item.changed_at)}</div>
+                <div>bởi ${item.changed_by || 'Hệ thống'}</div>
+            </div>
+        </div>
+    `).join('');
 }
 
 async function loadMyProfile() {
@@ -1796,9 +2268,26 @@ function renderPersonsTable(persons) {
         return;
     }
 
-    tbody.innerHTML = persons.map(p => {
-        const household = State.households.find(h => h.id === p.household_id);
-        const householdCode = household ? household.household_code : 'N/A';
+    // Group persons by household for better display
+    let currentHouseholdId = null;
+    let html = '';
+
+    persons.forEach(p => {
+        // Add household header row when switching to a new household
+        if (p.household_id !== currentHouseholdId) {
+            currentHouseholdId = p.household_id;
+            const householdCode = p.household_code || 'N/A';
+            html += `
+                <tr class="household-group-header" style="background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);">
+                    <td colspan="7" style="font-weight: 600; color: #0369a1; padding: 12px 16px;">
+                        🏠 Hộ khẩu: <strong>${householdCode}</strong>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Use household_code directly from response
+        const householdCode = p.household_code || 'N/A';
 
         // Status badge
         const statusBadge = {
@@ -1807,9 +2296,18 @@ function renderPersonsTable(persons) {
             'ABSENT': '<span class="badge badge-info">Tạm vắng</span>'
         }[p.status] || '<span class="badge badge-neutral">Khác</span>';
 
-        return `
+        html += `
             <tr>
-                <td><strong>${p.full_name || ''}</strong></td>
+                <td>
+                    <strong>${p.full_name || ''}</strong>
+                    ${p.phone || p.email || p.occupation ? `
+                        <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
+                            ${p.phone ? `📱 ${p.phone}` : ''}
+                            ${p.email ? `<br>📧 ${p.email}` : ''}
+                            ${p.occupation ? `<br>💼 ${p.occupation}` : ''}
+                        </div>
+                    ` : ''}
+                </td>
                 <td>${p.cid || ''}</td>
                 <td>${formatDate(p.dob)}</td>
                 <td class="text-center">${p.gender === 'MALE' ? 'Nam' : 'Nữ'}</td>
@@ -1822,7 +2320,10 @@ function renderPersonsTable(persons) {
                     </div>
                 </td>
             </tr>
-        `}).join('');
+        `;
+    });
+
+    tbody.innerHTML = html;
 }
 
 function populateHouseholdFilter() {
@@ -2701,9 +3202,18 @@ function showModal(title, content) {
 }
 
 function closeModal(modalId) {
-    const modal = modalId ? document.getElementById(modalId) : document.querySelector('.modal-overlay');
-    if (modal) {
-        modal.remove();
+    if (modalId) {
+        // Close specific static modal by ID (just hide it)
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    } else {
+        // Close dynamic modal (remove it)
+        const overlay = document.querySelector('.modal-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
     }
 }
 
@@ -2818,14 +3328,16 @@ async function login() {
 
         const data = await response.json();
 
-        // Save token
+        // Save token and role
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('username', username);
+        localStorage.setItem('role', data.role);  // Save role from API response
 
         // Parse token to get user info
         const payload = parseJwt(data.access_token);
         State.token = data.access_token;
         State.user = { username, ...payload };
+        State.role = data.role;  // Set role from API response
 
         // Show dashboard
         showDashboard();
@@ -2941,10 +3453,16 @@ function renderComplaintsTable(complaints) {
             <td style="color: var(--text-secondary);">${formatDate(c.created_at)}</td>
             <td>
                 <span class="${statusClass}">${statusText}</span>
+                ${c.satisfaction_rating ? `<span style="color: #f59e0b; margin-left: 4px;">${'⭐'.repeat(c.satisfaction_rating)}</span>` : ''}
             </td>
             <td class="text-right">
                 <div class="action-icons">
                     ${actions}
+                    ${c.status === 'RESOLVED' && !c.satisfaction_rating && isUserReporter(c) ? `
+                        <button class="icon-btn" onclick="showRatingModal(${c.id})" title="Đánh giá hài lòng" style="color: #f59e0b;">
+                            ⭐
+                        </button>
+                    ` : ''}
                 </div>
             </td>
         </tr>
@@ -2956,6 +3474,80 @@ function renderComplaintsTable(complaints) {
     if (badge) {
         badge.textContent = activeCount;
         badge.style.display = activeCount > 0 ? 'inline-block' : 'none';
+    }
+}
+
+// Check if current user is a reporter of the complaint
+function isUserReporter(complaint) {
+    if (!State.user) return false;
+
+    if (complaint.reporter_id === State.user.user_id) return true;
+
+    if (complaint.reporter_list) {
+        for (const r of complaint.reporter_list) {
+            if (r.user_id === State.user.user_id) return true;
+        }
+    }
+    return false;
+}
+
+// Show rating modal
+function showRatingModal(complaintId) {
+    const content = `
+        <form id="rating-form" style="text-align: center;">
+            <p style="margin-bottom: 16px; color: #64748b;">Bạn hài lòng với việc xử lý phản ánh này như thế nào?</p>
+            
+            <div style="font-size: 32px; margin-bottom: 16px;" id="star-rating">
+                ${[1, 2, 3, 4, 5].map(i => `
+                    <span class="star" data-rating="${i}" onclick="selectRating(${i})" 
+                          style="cursor: pointer; color: #e2e8f0; transition: color 0.2s;">⭐</span>
+                `).join('')}
+            </div>
+            <input type="hidden" id="rating-value" value="0">
+            
+            <div style="margin-bottom: 16px;">
+                <textarea id="rating-comment" class="form-control" rows="3" 
+                    placeholder="Nhận xét thêm (tùy chọn)..." style="width: 100%;"></textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary" onclick="submitRating(${complaintId}); return false;" 
+                style="width: 100%;">
+                Gửi đánh giá
+            </button>
+        </form>
+    `;
+    showModal('⭐ Đánh giá mức độ hài lòng', content);
+}
+
+function selectRating(rating) {
+    document.getElementById('rating-value').value = rating;
+    const stars = document.querySelectorAll('#star-rating .star');
+    stars.forEach((star, index) => {
+        star.style.color = index < rating ? '#f59e0b' : '#e2e8f0';
+    });
+}
+
+async function submitRating(complaintId) {
+    const rating = parseInt(document.getElementById('rating-value').value);
+    const comment = document.getElementById('rating-comment').value;
+
+    if (rating < 1 || rating > 5) {
+        showToast('Vui lòng chọn số sao đánh giá', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall(`/complaints/${complaintId}/rate`, {
+            method: 'POST',
+            body: JSON.stringify({ rating, comment })
+        });
+        if (result) {
+            showToast(result.message || 'Đánh giá thành công!', 'success');
+            closeModal(); // Close dynamic modal
+            loadComplaints(); // Reload to show rating
+        }
+    } catch (error) {
+        showToast('Có lỗi xảy ra: ' + error.message, 'error');
     }
 }
 
@@ -3285,6 +3877,10 @@ async function loadStatistics() {
         } catch (e) {
             console.log('Complaint stats not available:', e.message);
         }
+
+        // Load admin-only advanced statistics
+        await loadAdminStatistics();
+
     } catch (error) {
         console.error('Error loading statistics:', error);
     } finally {
@@ -3669,6 +4265,377 @@ function renderComplaintsChart(data) {
 }
 
 // ==========================================
+// ADMIN ADVANCED STATISTICS
+// ==========================================
+
+let householdSizeChart = null;
+let residentStatusChart = null;
+let residentRelationChart = null;
+let complaintsCategoryChart = null;
+let changeHistoryChart = null;
+
+// Switch between admin stats tabs
+function switchAdminTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.admin-tab').forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+            btn.style.background = 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)';
+            btn.style.color = 'white';
+        } else {
+            btn.style.background = 'white';
+            btn.style.color = '#475569';
+        }
+    });
+
+    // Show/hide tab content
+    document.querySelectorAll('.admin-tab-content').forEach(content => {
+        content.style.display = 'none';
+    });
+    const activeContent = document.getElementById('admin-tab-' + tabName);
+    if (activeContent) {
+        activeContent.style.display = 'block';
+    }
+
+    // Load data for the tab if needed
+    loadAdminTabData(tabName);
+}
+
+async function loadAdminTabData(tabName) {
+    const selectedYear = document.getElementById('stats-year-filter')?.value || new Date().getFullYear();
+
+    try {
+        if (tabName === 'household-size') {
+            await loadHouseholdSizeStats();
+            await loadAdvancedSummary();
+        } else if (tabName === 'resident-status') {
+            await loadResidentStatusStats();
+        } else if (tabName === 'resident-relation') {
+            await loadResidentRelationStats();
+        } else if (tabName === 'complaints-category') {
+            await loadComplaintsCategoryStats(selectedYear);
+            await loadComplaintsResolutionStats(selectedYear);
+        } else if (tabName === 'change-history') {
+            await loadChangeHistoryStats(selectedYear);
+        }
+    } catch (error) {
+        console.error('Error loading admin tab data:', error);
+    }
+}
+
+// Load admin statistics if user is admin
+async function loadAdminStatistics() {
+    if (State.role !== 'admin') {
+        const section = document.getElementById('admin-stats-section');
+        if (section) section.style.display = 'none';
+        return;
+    }
+
+    // Show admin section
+    const section = document.getElementById('admin-stats-section');
+    if (section) section.style.display = 'block';
+
+    // Load default tab data
+    await loadAdminTabData('household-size');
+}
+
+async function loadHouseholdSizeStats() {
+    try {
+        const data = await apiCall('/admin-stats/household-size');
+        if (data) {
+            renderHouseholdSizeChart(data);
+        }
+    } catch (e) {
+        console.log('Household size stats not available:', e.message);
+    }
+}
+
+function renderHouseholdSizeChart(data) {
+    const ctx = document.getElementById('household-size-chart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (householdSizeChart) {
+        householdSizeChart.destroy();
+    }
+
+    const labels = Object.keys(data.distribution);
+    const values = Object.values(data.distribution);
+    const colors = ['#3b82f6', '#10b981', '#f59e0b'];
+
+    householdSizeChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Update summary
+    const summaryEl = document.getElementById('household-size-summary');
+    if (summaryEl) {
+        const total = values.reduce((a, b) => a + b, 0);
+        summaryEl.innerHTML = `
+            <strong>Tổng số hộ đã thống kê:</strong> ${total} hộ<br>
+            <strong>Hộ chưa có thành viên:</strong> ${data.empty_households || 0} hộ
+        `;
+    }
+}
+
+async function loadAdvancedSummary() {
+    try {
+        const data = await apiCall('/admin-stats/summary-advanced');
+        if (data) {
+            document.getElementById('avg-household-size').textContent = data.average_household_size || 0;
+            document.getElementById('gender-ratio-display').textContent = data.gender_ratio || 0;
+
+            // Top households
+            const listEl = document.getElementById('top-households-list');
+            if (listEl && data.top_households) {
+                listEl.innerHTML = data.top_households.map((h, i) => `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e2e8f0;">
+                        <span>${i + 1}. ${h.code}</span>
+                        <span style="font-weight: 600; color: #3b82f6;">${h.members} người</span>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        console.log('Advanced summary not available:', e.message);
+    }
+}
+
+async function loadResidentStatusStats() {
+    try {
+        const data = await apiCall('/admin-stats/resident-status');
+        if (data) {
+            renderResidentStatusChart(data);
+        }
+    } catch (e) {
+        console.log('Resident status stats not available:', e.message);
+    }
+}
+
+function renderResidentStatusChart(data) {
+    const ctx = document.getElementById('resident-status-chart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (residentStatusChart) {
+        residentStatusChart.destroy();
+    }
+
+    const labels = Object.keys(data.distribution);
+    const values = Object.values(data.distribution);
+    const colors = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444'];
+
+    residentStatusChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+async function loadResidentRelationStats() {
+    try {
+        const data = await apiCall('/admin-stats/resident-relation');
+        if (data) {
+            renderResidentRelationChart(data);
+        }
+    } catch (e) {
+        console.log('Resident relation stats not available:', e.message);
+    }
+}
+
+function renderResidentRelationChart(data) {
+    const ctx = document.getElementById('resident-relation-chart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (residentRelationChart) {
+        residentRelationChart.destroy();
+    }
+
+    const labels = Object.keys(data.distribution);
+    const values = Object.values(data.distribution);
+    const colors = ['#3b82f6', '#ec4899', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#14b8a6'];
+
+    residentRelationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Số lượng',
+                data: values,
+                backgroundColor: colors.slice(0, labels.length),
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+async function loadComplaintsCategoryStats(year) {
+    try {
+        const data = await apiCall(`/admin-stats/complaints-category?year=${year}`);
+        if (data) {
+            renderComplaintsCategoryChart(data);
+        }
+    } catch (e) {
+        console.log('Complaints category stats not available:', e.message);
+    }
+}
+
+function renderComplaintsCategoryChart(data) {
+    const ctx = document.getElementById('complaints-category-chart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (complaintsCategoryChart) {
+        complaintsCategoryChart.destroy();
+    }
+
+    const labels = Object.keys(data.distribution);
+    const values = Object.values(data.distribution);
+    const colors = ['#ef4444', '#10b981', '#3b82f6'];
+
+    complaintsCategoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+async function loadComplaintsResolutionStats(year) {
+    try {
+        const data = await apiCall(`/admin-stats/complaints-resolution?year=${year}`);
+        if (data) {
+            document.getElementById('resolution-rate').textContent = `${data.resolution_rate}%`;
+            document.getElementById('new-complaints-count').textContent = data.new || 0;
+            document.getElementById('processing-complaints-count').textContent = data.processing || 0;
+            document.getElementById('resolved-complaints-count').textContent = data.resolved || 0;
+        }
+    } catch (e) {
+        console.log('Complaints resolution stats not available:', e.message);
+    }
+}
+
+async function loadChangeHistoryStats(year) {
+    try {
+        const data = await apiCall(`/admin-stats/change-history?year=${year}`);
+        if (data) {
+            renderChangeHistoryChart(data);
+        }
+    } catch (e) {
+        console.log('Change history stats not available:', e.message);
+    }
+}
+
+function renderChangeHistoryChart(data) {
+    const ctx = document.getElementById('change-history-chart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (changeHistoryChart) {
+        changeHistoryChart.destroy();
+    }
+
+    const labels = Object.keys(data.by_type);
+    const values = Object.values(data.by_type);
+    const colors = ['#f59e0b', '#10b981', '#ef4444'];
+
+    changeHistoryChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Số lượng',
+                data: values,
+                backgroundColor: colors.slice(0, labels.length),
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+
+    // Update summary
+    const summaryEl = document.getElementById('change-history-summary');
+    if (summaryEl) {
+        summaryEl.innerHTML = `
+            <strong>Năm ${data.year}:</strong> Tổng ${data.total || 0} thay đổi<br>
+            ${Object.entries(data.by_type).map(([k, v]) => `<span style="margin-right: 16px;">${k}: <strong>${v}</strong></span>`).join('')}
+        `;
+    }
+}
+
+// ==========================================
 // GLOBAL SEARCH
 // ==========================================
 
@@ -3865,4 +4832,543 @@ document.addEventListener('DOMContentLoaded', () => {
     initGlobalSearch();
 });
 
+// ==========================================
+// Q&A SYSTEM
+// ==========================================
 
+let questionsData = [];
+
+async function loadQuestions() {
+    try {
+        showLoading();
+        const targetFilter = document.getElementById('question-target-filter')?.value || '';
+        const statusFilter = document.getElementById('question-status-filter')?.value || '';
+
+        let url = '/questions';
+        const params = new URLSearchParams();
+        if (targetFilter) params.append('target_role', targetFilter);
+        if (statusFilter) params.append('status', statusFilter);
+
+        // For residents, show their own questions; for leaders/admins show questions to them
+        if (State.role === 'resident') {
+            params.append('my_questions', 'true');
+        }
+
+        if (params.toString()) url += '?' + params.toString();
+
+        const questions = await apiCall(url);
+        if (questions) {
+            questionsData = questions;
+            renderQuestionsTable(questions);
+        }
+    } catch (error) {
+        console.error('Error loading questions:', error);
+        showToast('Không thể tải danh sách câu hỏi', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderQuestionsTable(questions) {
+    const tbody = document.querySelector('#questions-table tbody');
+    if (!tbody) return;
+
+    if (!questions || questions.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center" style="padding: 40px;">
+                    <div class="empty-state-icon">❓</div>
+                    <p>Chưa có câu hỏi nào</p>
+                    <button class="btn-primary" onclick="showAskQuestionModal()" style="margin-top: 12px;">
+                        Đặt câu hỏi đầu tiên
+                    </button>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const statusLabels = {
+        'PENDING': '<span class="badge badge-warning">Chờ trả lời</span>',
+        'ANSWERED': '<span class="badge badge-success">Đã trả lời</span>',
+        'CLOSED': '<span class="badge badge-secondary">Đã đóng</span>'
+    };
+
+    const targetLabels = {
+        'leader': '👨‍💼 Tổ trưởng',
+        'admin': '👨‍💻 Admin'
+    };
+
+    tbody.innerHTML = questions.map(q => `
+        <tr>
+            <td><strong>${q.asker_username || 'N/A'}</strong></td>
+            <td>
+                <a href="#" onclick="viewQuestionDetail(${q.id})" style="color: var(--accent-color); text-decoration: none;">
+                    ${q.title}
+                </a>
+            </td>
+            <td>${targetLabels[q.target_role] || q.target_role}</td>
+            <td>${formatDate(q.created_at)}</td>
+            <td>${q.answer_count || 0}</td>
+            <td>${statusLabels[q.status] || q.status}</td>
+            <td class="text-right">
+                <div class="action-icons">
+                    <button class="icon-btn" onclick="viewQuestionDetail(${q.id})" title="Xem chi tiết">👁️</button>
+                    ${q.status !== 'CLOSED' && (q.asker_id === State.user?.user_id || State.role === 'admin') ?
+            `<button class="icon-btn" onclick="closeQuestion(${q.id})" title="Đóng câu hỏi">✓</button>` : ''
+        }
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function filterQuestions() {
+    loadQuestions();
+}
+
+function showAskQuestionModal() {
+    const modal = document.getElementById('ask-question-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Clear form
+        document.getElementById('question-title').value = '';
+        document.getElementById('question-content').value = '';
+        document.getElementById('question-target').value = 'leader';
+    }
+}
+
+async function submitQuestion() {
+    const title = document.getElementById('question-title').value.trim();
+    const content = document.getElementById('question-content').value.trim();
+    const targetRole = document.getElementById('question-target').value;
+
+    if (!title || !content) {
+        showToast('Vui lòng điền đầy đủ tiêu đề và nội dung', 'error');
+        return;
+    }
+
+    try {
+        showLoading();
+        const result = await apiCall('/questions/', {
+            method: 'POST',
+            body: JSON.stringify({
+                title: title,
+                content: content,
+                target_role: targetRole
+            })
+        });
+
+        if (result) {
+            showToast('Câu hỏi đã được gửi thành công!', 'success');
+            closeModal('ask-question-modal');
+            loadQuestions();
+        }
+    } catch (error) {
+        console.error('Error submitting question:', error);
+        showToast('Không thể gửi câu hỏi', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function viewQuestionDetail(questionId) {
+    try {
+        showLoading();
+        const question = await apiCall(`/questions/${questionId}`);
+
+        if (!question) {
+            showToast('Không tìm thấy câu hỏi', 'error');
+            return;
+        }
+
+        document.getElementById('question-detail-title').textContent = '❓ ' + question.title;
+
+        const statusLabels = {
+            'PENDING': '<span class="badge badge-warning">Chờ trả lời</span>',
+            'ANSWERED': '<span class="badge badge-success">Đã trả lời</span>',
+            'CLOSED': '<span class="badge badge-secondary">Đã đóng</span>'
+        };
+
+        // Build answers HTML
+        let answersHtml = '';
+        if (question.answers && question.answers.length > 0) {
+            answersHtml = question.answers.map(a => `
+                <div style="background: #d1fae5; padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #10b981;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <strong style="color: #065f46;">💬 ${a.answerer_username}</strong>
+                        <span style="font-size: 12px; color: #64748b;">${formatDate(a.created_at)}</span>
+                    </div>
+                    <p style="margin: 0; color: #1e293b;">${a.content}</p>
+                </div>
+            `).join('');
+        } else {
+            answersHtml = '<p style="color: #94a3b8; text-align: center; padding: 16px;">Chưa có câu trả lời</p>';
+        }
+
+        document.getElementById('question-detail-body').innerHTML = `
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="color: #64748b;">Người hỏi: <strong>${question.asker_username}</strong></span>
+                    ${statusLabels[question.status] || question.status}
+                </div>
+                <p style="color: #1e293b; font-size: 15px; line-height: 1.6;">${question.content}</p>
+                <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">
+                    📅 ${formatDate(question.created_at)}
+                </div>
+            </div>
+            
+            <h4 style="margin-bottom: 12px; color: #10b981;">📝 Câu trả lời (${question.answers?.length || 0})</h4>
+            ${answersHtml}
+        `;
+
+        // Show answer form for leaders/admins if question is not closed
+        const footerEl = document.getElementById('question-detail-footer');
+        if ((State.role === 'leader' || State.role === 'admin') && question.status !== 'CLOSED') {
+            footerEl.innerHTML = `
+                <div style="width: 100%; margin-bottom: 12px;">
+                    <textarea id="answer-content" class="form-control" rows="3" placeholder="Nhập câu trả lời của bạn..."></textarea>
+                </div>
+                <button class="btn-secondary" onclick="closeModal('question-detail-modal')">Đóng</button>
+                <button class="btn-primary" onclick="submitAnswer(${questionId})">Gửi trả lời</button>
+            `;
+        } else {
+            footerEl.innerHTML = `
+                <button class="btn-secondary" onclick="closeModal('question-detail-modal')">Đóng</button>
+            `;
+        }
+
+        document.getElementById('question-detail-modal').style.display = 'flex';
+
+    } catch (error) {
+        console.error('Error loading question detail:', error);
+        showToast('Không thể tải chi tiết câu hỏi', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function submitAnswer(questionId) {
+    const content = document.getElementById('answer-content').value.trim();
+
+    if (!content) {
+        showToast('Vui lòng nhập nội dung câu trả lời', 'error');
+        return;
+    }
+
+    try {
+        showLoading();
+        const result = await apiCall(`/questions/${questionId}/answers`, {
+            method: 'POST',
+            body: JSON.stringify({ content: content })
+        });
+
+        if (result) {
+            showToast('Đã gửi câu trả lời!', 'success');
+            closeModal('question-detail-modal');
+            loadQuestions();
+        }
+    } catch (error) {
+        console.error('Error submitting answer:', error);
+        showToast('Không thể gửi câu trả lời', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function closeQuestion(questionId) {
+    if (!confirm('Bạn có chắc chắn muốn đóng câu hỏi này?')) {
+        return;
+    }
+
+    try {
+        showLoading();
+        const result = await apiCall(`/questions/${questionId}/close`, { method: 'PUT' });
+
+        if (result) {
+            showToast('Đã đóng câu hỏi', 'success');
+            loadQuestions();
+        }
+    } catch (error) {
+        console.error('Error closing question:', error);
+        showToast('Không thể đóng câu hỏi', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// ==========================================
+// REMINDERS SYSTEM
+// ==========================================
+
+let remindersData = [];
+
+async function loadReminders() {
+    // Show admin panel for admin/leader
+    const adminPanel = document.getElementById('admin-reminders-panel');
+    if (adminPanel) {
+        adminPanel.style.display = (State.role === 'admin' || State.role === 'leader') ? 'flex' : 'none';
+    }
+
+    try {
+        showLoading();
+        const statusFilter = document.getElementById('reminder-status-filter')?.value || '';
+
+        let url;
+        if (State.role === 'admin' || State.role === 'leader') {
+            url = '/reminders/admin/all';
+            if (statusFilter) url += `?status=${statusFilter}`;
+        } else {
+            url = '/reminders/my';
+        }
+
+        const reminders = await apiCall(url);
+        if (reminders) {
+            remindersData = reminders;
+            renderRemindersTable(reminders);
+        }
+    } catch (error) {
+        console.error('Error loading reminders:', error);
+        // Show empty state instead of error for new setup
+        renderRemindersTable([]);
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderRemindersTable(reminders) {
+    const tbody = document.querySelector('#reminders-table tbody');
+    if (!tbody) return;
+
+    if (!reminders || reminders.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center" style="padding: 40px;">
+                    <div class="empty-state-icon">🔔</div>
+                    <p>Chưa có nhắc nhở nào</p>
+                    ${State.role === 'admin' ? `
+                        <button class="btn-primary" onclick="generateReminders()" style="margin-top: 12px;">
+                            🔄 Tạo nhắc nhở tự động
+                        </button>
+                    ` : ''}
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const statusLabels = {
+        'PENDING': '<span class="badge badge-warning">Chờ xử lý</span>',
+        'SENT': '<span class="badge badge-info">Đã gửi</span>',
+        'ACKNOWLEDGED': '<span class="badge badge-success">Đã xem</span>',
+        'DISMISSED': '<span class="badge badge-secondary">Bỏ qua</span>'
+    };
+
+    tbody.innerHTML = reminders.map(r => `
+        <tr>
+            <td><strong>${r.resident_name || 'N/A'}</strong></td>
+            <td>${r.title}</td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${r.message}</td>
+            <td>${r.due_date ? formatDate(r.due_date) : '-'}</td>
+            <td>${statusLabels[r.status] || r.status}</td>
+            <td class="text-right">
+                <div class="action-icons">
+                    ${r.status === 'SENT' && State.role === 'resident' ?
+            `<button class="icon-btn" onclick="acknowledgeReminder(${r.id})" title="Đánh dấu đã xem">✓</button>` : ''
+        }
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function filterReminders() {
+    loadReminders();
+}
+
+async function generateReminders() {
+    try {
+        showLoading();
+        const result = await apiCall('/reminders/admin/generate', { method: 'POST' });
+
+        if (result) {
+            showToast(result.message, 'success');
+            loadReminders();
+        }
+    } catch (error) {
+        console.error('Error generating reminders:', error);
+        showToast('Không thể tạo nhắc nhở', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function showReminderRulesModal() {
+    try {
+        showLoading();
+        const rules = await apiCall('/reminders/admin/rules');
+
+        if (!rules || rules.length === 0) {
+            document.getElementById('reminder-rules-body').innerHTML = `
+                <p style="text-align: center; color: #64748b;">Chưa có quy tắc nào</p>
+            `;
+        } else {
+            const ruleTypeLabels = {
+                'CCCD_14': '📇 Làm CCCD lần đầu (14 tuổi)',
+                'TEMP_RESIDENCE_EXPIRE': '🏠 Tạm trú sắp hết hạn',
+                'TEMP_ABSENCE_LONG': '🚶 Tạm vắng quá lâu',
+                'LIFE_EVENT': '🎉 Sự kiện cuộc sống'
+            };
+
+            document.getElementById('reminder-rules-body').innerHTML = `
+                <table class="data-table" style="margin: 0;">
+                    <thead>
+                        <tr>
+                            <th>Quy tắc</th>
+                            <th>Nhắc trước (ngày)</th>
+                            <th>Trạng thái</th>
+                            <th class="text-right">Tác vụ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rules.map(r => `
+                            <tr>
+                                <td>
+                                    <strong>${ruleTypeLabels[r.rule_type] || r.rule_type}</strong>
+                                    <br><small style="color: #64748b;">${r.description || ''}</small>
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control" value="${r.days_before}" 
+                                        id="rule-days-${r.id}" style="width: 80px;" min="0" max="365">
+                                </td>
+                                <td>
+                                    <label style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" id="rule-active-${r.id}" ${r.is_active ? 'checked' : ''}>
+                                        ${r.is_active ? 'Bật' : 'Tắt'}
+                                    </label>
+                                </td>
+                                <td class="text-right">
+                                    <button class="btn-primary" style="padding: 6px 12px; font-size: 12px;" 
+                                        onclick="updateReminderRule(${r.id})">
+                                        Lưu
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        document.getElementById('reminder-rules-modal').style.display = 'flex';
+
+    } catch (error) {
+        console.error('Error loading reminder rules:', error);
+        showToast('Không thể tải quy tắc nhắc nhở', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function updateReminderRule(ruleId) {
+    const daysBefore = document.getElementById(`rule-days-${ruleId}`).value;
+    const isActive = document.getElementById(`rule-active-${ruleId}`).checked;
+
+    try {
+        showLoading();
+        const result = await apiCall(`/reminders/admin/rules/${ruleId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                days_before: parseInt(daysBefore),
+                is_active: isActive
+            })
+        });
+
+        if (result) {
+            showToast('Đã cập nhật quy tắc!', 'success');
+            showReminderRulesModal(); // Refresh
+        }
+    } catch (error) {
+        console.error('Error updating rule:', error);
+        showToast('Không thể cập nhật quy tắc', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function acknowledgeReminder(reminderId) {
+    try {
+        showLoading();
+        const result = await apiCall(`/reminders/${reminderId}/acknowledge`, { method: 'PUT' });
+
+        if (result) {
+            showToast('Đã xác nhận!', 'success');
+            loadReminders();
+        }
+    } catch (error) {
+        console.error('Error acknowledging reminder:', error);
+        showToast('Không thể xác nhận', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function showCreateReminderModal() {
+    // Load residents for dropdown
+    try {
+        showLoading();
+        const residents = await apiCall('/persons?limit=500');
+        const select = document.getElementById('reminder-resident-id');
+        if (select && residents && residents.items) {
+            select.innerHTML = '<option value="">-- Chọn cư dân --</option>' +
+                residents.items.map(r => `<option value="${r.id}">${r.full_name} - ${r.cccd || 'N/A'}</option>`).join('');
+        }
+    } catch (error) {
+        console.error('Error loading residents:', error);
+    } finally {
+        hideLoading();
+    }
+
+    // Clear form
+    document.getElementById('reminder-title').value = '';
+    document.getElementById('reminder-message').value = '';
+    document.getElementById('reminder-due-date').value = '';
+
+    document.getElementById('create-reminder-modal').style.display = 'flex';
+}
+
+async function submitCreateReminder() {
+    const residentId = document.getElementById('reminder-resident-id').value;
+    const title = document.getElementById('reminder-title').value.trim();
+    const message = document.getElementById('reminder-message').value.trim();
+    const dueDate = document.getElementById('reminder-due-date').value;
+
+    if (!residentId || !title || !message) {
+        showToast('Vui lòng điền đầy đủ thông tin', 'error');
+        return;
+    }
+
+    try {
+        showLoading();
+        const result = await apiCall('/reminders/admin/create', {
+            method: 'POST',
+            body: JSON.stringify({
+                resident_id: parseInt(residentId),
+                title: title,
+                message: message,
+                due_date: dueDate || null
+            })
+        });
+
+        if (result) {
+            showToast(result.message, 'success');
+            closeModal('create-reminder-modal');
+            loadReminders();
+        }
+    } catch (error) {
+        console.error('Error creating reminder:', error);
+        showToast('Không thể tạo nhắc nhở', 'error');
+    } finally {
+        hideLoading();
+    }
+}

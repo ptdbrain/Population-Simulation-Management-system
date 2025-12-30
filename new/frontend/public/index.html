@@ -9,6 +9,9 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap"
         rel="stylesheet">
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Styles -->
@@ -194,6 +197,15 @@
                 <span class="nav-icon">📢</span> Phản ánh / Kiến nghị
                 <span class="nav-badge" id="complaints-count">3</span>
             </a>
+            <a href="#" class="nav-item" onclick="switchTab('questions')" data-tab="questions">
+                <span class="nav-icon">❓</span> Hỏi đáp
+            </a>
+            <a href="#" class="nav-item" onclick="switchTab('reminders')" data-tab="reminders">
+                <span class="nav-icon">🔔</span> Nhắc nhở
+            </a>
+            <a href="#" class="nav-item admin-only" onclick="switchTab('users')" data-tab="users" id="nav-users">
+                <span class="nav-icon">👤</span> Quản lý Người dùng
+            </a>
         </div>
         <div class="user-profile">
             <div class="avatar">AD</div>
@@ -218,7 +230,30 @@
                 </div>
                 <button class="btn-icon" id="btn-view-requests" onclick="showPendingRequests()"
                     title="Xem yêu cầu chờ duyệt" style="display: none;">📋</button>
-                <button class="btn-icon">🔔</button>
+
+                <!-- Notification Bell with Dropdown -->
+                <div class="notification-wrapper" style="position: relative;">
+                    <button class="btn-icon" id="btn-notifications" onclick="toggleNotificationDropdown()"
+                        title="Thông báo">
+                        🔔
+                        <span class="notification-badge" id="notification-badge"
+                            style="display: none; position: absolute; top: -4px; right: -4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; line-height: 18px; text-align: center;">0</span>
+                    </button>
+                    <div class="notification-dropdown" id="notification-dropdown"
+                        style="display: none; position: absolute; right: 0; top: 40px; width: 320px; max-height: 400px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden;">
+                        <div style="padding: 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">
+                            🔔 Thông báo
+                        </div>
+                        <div id="notification-list" style="max-height: 300px; overflow-y: auto;">
+                            <div style="padding: 24px; text-align: center; color: #64748b;">Không có thông báo mới</div>
+                        </div>
+                        <div style="padding: 12px; border-top: 1px solid #e2e8f0; text-align: center;">
+                            <a href="#" onclick="switchTab('my-household'); toggleNotificationDropdown();"
+                                style="color: #3b82f6; font-size: 13px; text-decoration: none;">Xem tất cả</a>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn-primary" onclick="showAddModal()">
                     <span>+</span> Thêm mới
                 </button>
@@ -363,12 +398,172 @@
                         </div>
                     </div>
 
+
                     <!-- Row 4: Complaint Trends -->
                     <div class="chart-card">
                         <div class="chart-header">
                             <div class="chart-title">📈 Xu hướng phản ánh theo Quý</div>
                         </div>
                         <canvas id="complaints-chart" style="max-height: 250px;"></canvas>
+                    </div>
+
+                    <!-- Row 5: Advanced Admin Statistics (Admin Only) -->
+                    <div id="admin-stats-section" class="admin-only-section" style="display: none;">
+                        <div class="section-divider"
+                            style="margin: 32px 0; border-top: 2px solid #e2e8f0; position: relative;">
+                            <span
+                                style="position: absolute; left: 50%; transform: translateX(-50%); top: -12px; background: #f8fafc; padding: 0 16px; color: #64748b; font-weight: 600;">
+                                🔒 THỐNG KÊ NÂNG CAO (ADMIN)
+                            </span>
+                        </div>
+
+                        <!-- Admin Stats Tabs -->
+                        <div class="admin-stats-tabs"
+                            style="display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;">
+                            <button class="admin-tab active" onclick="switchAdminTab('household-size')"
+                                data-tab="household-size"
+                                style="padding: 10px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; cursor: pointer; font-weight: 500;">
+                                🏠 Quy mô hộ
+                            </button>
+                            <button class="admin-tab" onclick="switchAdminTab('resident-status')"
+                                data-tab="resident-status"
+                                style="padding: 10px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #475569; cursor: pointer; font-weight: 500;">
+                                📊 Trạng thái cư trú
+                            </button>
+                            <button class="admin-tab" onclick="switchAdminTab('resident-relation')"
+                                data-tab="resident-relation"
+                                style="padding: 10px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #475569; cursor: pointer; font-weight: 500;">
+                                👨‍👩‍👧 Quan hệ
+                            </button>
+                            <button class="admin-tab" onclick="switchAdminTab('complaints-category')"
+                                data-tab="complaints-category"
+                                style="padding: 10px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #475569; cursor: pointer; font-weight: 500;">
+                                📢 Khiếu nại theo loại
+                            </button>
+                            <button class="admin-tab" onclick="switchAdminTab('change-history')"
+                                data-tab="change-history"
+                                style="padding: 10px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #475569; cursor: pointer; font-weight: 500;">
+                                📜 Lịch sử thay đổi
+                            </button>
+                        </div>
+
+                        <!-- Household Size Distribution -->
+                        <div id="admin-tab-household-size" class="admin-tab-content">
+                            <div class="charts-row">
+                                <div class="chart-card">
+                                    <div class="chart-header">
+                                        <div class="chart-title">🏠 Phân bố quy mô hộ gia đình</div>
+                                    </div>
+                                    <canvas id="household-size-chart" style="max-height: 300px;"></canvas>
+                                    <div id="household-size-summary"
+                                        style="margin-top: 12px; padding: 12px; background: #f1f5f9; border-radius: 8px; font-size: 13px;">
+                                    </div>
+                                </div>
+                                <div class="chart-card">
+                                    <div class="chart-header">
+                                        <div class="chart-title">📊 Thống kê tổng hợp</div>
+                                    </div>
+                                    <div id="admin-summary-box" style="padding: 16px;">
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                            <div
+                                                style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 16px; border-radius: 12px; text-align: center;">
+                                                <div style="font-size: 28px; font-weight: 700; color: #1e40af;"
+                                                    id="avg-household-size">0</div>
+                                                <div style="font-size: 12px; color: #3b82f6;">Quy mô TB</div>
+                                            </div>
+                                            <div
+                                                style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 16px; border-radius: 12px; text-align: center;">
+                                                <div style="font-size: 28px; font-weight: 700; color: #92400e;"
+                                                    id="gender-ratio-display">0</div>
+                                                <div style="font-size: 12px; color: #b45309;">Tỉ lệ Nam/Nữ</div>
+                                            </div>
+                                        </div>
+                                        <div style="margin-top: 16px;">
+                                            <div style="font-weight: 600; margin-bottom: 8px; color: #475569;">🏆 Top Hộ
+                                                đông thành viên</div>
+                                            <div id="top-households-list" style="font-size: 13px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resident Status Distribution -->
+                        <div id="admin-tab-resident-status" class="admin-tab-content" style="display: none;">
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div class="chart-title">📊 Phân bố theo trạng thái cư trú</div>
+                                </div>
+                                <canvas id="resident-status-chart" style="max-height: 300px;"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Resident Relation Distribution -->
+                        <div id="admin-tab-resident-relation" class="admin-tab-content" style="display: none;">
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div class="chart-title">👨‍👩‍👧 Phân bố theo quan hệ với chủ hộ</div>
+                                </div>
+                                <canvas id="resident-relation-chart" style="max-height: 300px;"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Complaints by Category -->
+                        <div id="admin-tab-complaints-category" class="admin-tab-content" style="display: none;">
+                            <div class="charts-row">
+                                <div class="chart-card">
+                                    <div class="chart-header">
+                                        <div class="chart-title">📢 Phân bố khiếu nại theo danh mục</div>
+                                    </div>
+                                    <canvas id="complaints-category-chart" style="max-height: 300px;"></canvas>
+                                </div>
+                                <div class="chart-card">
+                                    <div class="chart-header">
+                                        <div class="chart-title">✅ Tỉ lệ giải quyết</div>
+                                    </div>
+                                    <div id="resolution-stats" style="padding: 16px;">
+                                        <div style="text-align: center; margin-bottom: 20px;">
+                                            <div style="font-size: 48px; font-weight: 700; color: #059669;"
+                                                id="resolution-rate">0%</div>
+                                            <div style="color: #64748b;">Tỉ lệ giải quyết thành công</div>
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                                            <div
+                                                style="background: #fef3c7; padding: 12px; border-radius: 8px; text-align: center;">
+                                                <div style="font-size: 24px; font-weight: 700; color: #b45309;"
+                                                    id="new-complaints-count">0</div>
+                                                <div style="font-size: 11px; color: #92400e;">Mới</div>
+                                            </div>
+                                            <div
+                                                style="background: #dbeafe; padding: 12px; border-radius: 8px; text-align: center;">
+                                                <div style="font-size: 24px; font-weight: 700; color: #1e40af;"
+                                                    id="processing-complaints-count">0</div>
+                                                <div style="font-size: 11px; color: #1e40af;">Đang xử lý</div>
+                                            </div>
+                                            <div
+                                                style="background: #d1fae5; padding: 12px; border-radius: 8px; text-align: center;">
+                                                <div style="font-size: 24px; font-weight: 700; color: #059669;"
+                                                    id="resolved-complaints-count">0</div>
+                                                <div style="font-size: 11px; color: #065f46;">Đã giải quyết</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Change History -->
+                        <div id="admin-tab-change-history" class="admin-tab-content" style="display: none;">
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div class="chart-title">📜 Lịch sử thay đổi hộ khẩu</div>
+                                </div>
+                                <canvas id="change-history-chart" style="max-height: 300px;"></canvas>
+                                <div id="change-history-summary"
+                                    style="margin-top: 12px; padding: 12px; background: #f1f5f9; border-radius: 8px; font-size: 13px;">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -471,7 +666,7 @@
                 </div>
 
                 <!-- My Requests Section -->
-                <div class="chart-card">
+                <div class="chart-card" style="margin-bottom: 24px;">
                     <div class="chart-header">
                         <span class="chart-title">📝 Yêu cầu của tôi</span>
                         <button class="btn-primary" onclick="showRequestModal()"
@@ -493,6 +688,29 @@
                             <!-- JS Generated -->
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Change History Section -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <span class="chart-title">📜 Lịch sử thay đổi cư trú</span>
+                    </div>
+
+                    <!-- Personal History -->
+                    <div style="margin-bottom: 16px;">
+                        <h4 style="color: #3b82f6; margin-bottom: 12px; font-size: 14px;">👤 Lịch sử cá nhân</h4>
+                        <div id="my-personal-history" style="font-size: 13px;">
+                            <p style="color: #64748b; text-align: center; padding: 16px;">Chưa có lịch sử thay đổi</p>
+                        </div>
+                    </div>
+
+                    <!-- Household History -->
+                    <div style="border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                        <h4 style="color: #10b981; margin-bottom: 12px; font-size: 14px;">🏠 Lịch sử hộ gia đình</h4>
+                        <div id="my-household-history" style="font-size: 13px;">
+                            <p style="color: #64748b; text-align: center; padding: 16px;">Chưa có lịch sử thay đổi</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -604,10 +822,234 @@
                 </div>
             </div>
 
+            <!-- 5.5. Q&A SYSTEM -->
+            <div id="tab-questions" class="tab-content">
+                <!-- Q&A Header -->
+                <div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center; flex-wrap: wrap;">
+                    <select class="form-control" id="question-target-filter" onchange="filterQuestions()"
+                        style="width: 180px;">
+                        <option value="">Tất cả đối tượng</option>
+                        <option value="leader">Gửi cho Tổ trưởng</option>
+                        <option value="admin">Gửi cho Admin</option>
+                    </select>
+                    <select class="form-control" id="question-status-filter" onchange="filterQuestions()"
+                        style="width: 180px;">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="PENDING">Chờ trả lời</option>
+                        <option value="ANSWERED">Đã trả lời</option>
+                        <option value="CLOSED">Đã đóng</option>
+                    </select>
+                    <button class="btn-primary" onclick="showAskQuestionModal()" style="margin-left: auto;">
+                        ❓ Đặt câu hỏi
+                    </button>
+                </div>
+
+                <!-- Questions List -->
+                <div class="table-card">
+                    <table class="data-table" id="questions-table">
+                        <thead>
+                            <tr>
+                                <th>Người hỏi</th>
+                                <th style="width: 30%">Tiêu đề</th>
+                                <th>Gửi cho</th>
+                                <th>Ngày hỏi</th>
+                                <th>Trả lời</th>
+                                <th>Trạng thái</th>
+                                <th class="text-right">Tác vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 5.6. REMINDERS SYSTEM -->
+            <div id="tab-reminders" class="tab-content">
+                <!-- Admin Panel for Reminders -->
+                <div id="admin-reminders-panel" style="margin-bottom: 24px; display: none;">
+                    <div class="kpi-row" style="gap: 16px; margin-bottom: 16px;">
+                        <button class="btn-primary" onclick="showCreateReminderModal()" style="padding: 12px 24px;">
+                            ➕ Tạo nhắc nhở mới
+                        </button>
+                        <button class="btn-secondary" onclick="generateReminders()" style="padding: 12px 24px;">
+                            🔄 Tạo nhắc nhở tự động
+                        </button>
+                        <button class="btn-secondary" onclick="showReminderRulesModal()" style="padding: 12px 24px;">
+                            ⚙️ Cấu hình quy tắc
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Reminders List -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <span class="chart-title">🔔 Danh sách nhắc nhở</span>
+                        <select class="form-control" id="reminder-status-filter" onchange="filterReminders()"
+                            style="width: 180px;">
+                            <option value="">Tất cả trạng thái</option>
+                            <option value="PENDING">Chờ xử lý</option>
+                            <option value="SENT">Đã gửi</option>
+                            <option value="ACKNOWLEDGED">Đã xem</option>
+                        </select>
+                    </div>
+                    <table class="data-table" id="reminders-table">
+                        <thead>
+                            <tr>
+                                <th>Cư dân</th>
+                                <th style="width: 25%">Tiêu đề</th>
+                                <th>Nội dung</th>
+                                <th>Hạn xử lý</th>
+                                <th>Trạng thái</th>
+                                <th class="text-right">Tác vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 6. USER MANAGEMENT (Admin Only) -->
+            <div id="tab-users" class="tab-content">
+                <div class="filter-row" style="margin-bottom: 24px;">
+                    <select class="form-control" id="user-role-filter" onchange="filterUsers()"
+                        style="max-width: 180px;">
+                        <option value="">Tất cả vai trò</option>
+                        <!-- Options loaded dynamically -->
+                    </select>
+                    <select class="form-control" id="user-status-filter" onchange="filterUsers()"
+                        style="max-width: 180px;">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="true">Hoạt động</option>
+                        <option value="false">Vô hiệu hóa</option>
+                    </select>
+                    <button class="btn-primary" onclick="showCreateUserModal()" style="margin-left: auto;">
+                        + Thêm người dùng
+                    </button>
+                </div>
+
+                <div class="table-card">
+                    <table class="data-table" id="users-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Vai trò</th>
+                                <th>Cư dân liên kết</th>
+                                <th>Trạng thái</th>
+                                <th class="text-right">Tác vụ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
         </main>
     </div>
 
-    <script src="app.js?v=2024122821"></script>
+    <!-- GLOBAL MODALS (outside main content for proper overlay) -->
+    <!-- Ask Question Modal -->
+    <div id="ask-question-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>❓ Đặt câu hỏi</h3>
+                <button class="close-btn" onclick="closeModal('ask-question-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label">Gửi câu hỏi cho:</label>
+                    <select id="question-target" class="form-control">
+                        <option value="leader">Tổ trưởng</option>
+                        <option value="admin">Quản trị viên</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label">Tiêu đề câu hỏi:</label>
+                    <input type="text" id="question-title" class="form-control" placeholder="Nhập tiêu đề ngắn gọn...">
+                </div>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label">Nội dung chi tiết:</label>
+                    <textarea id="question-content" class="form-control" rows="5"
+                        placeholder="Mô tả chi tiết câu hỏi của bạn..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal('ask-question-modal')">Hủy</button>
+                <button class="btn-primary" onclick="submitQuestion()">Gửi câu hỏi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Question Detail Modal -->
+    <div id="question-detail-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 id="question-detail-title">Chi tiết câu hỏi</h3>
+                <button class="close-btn" onclick="closeModal('question-detail-modal')">&times;</button>
+            </div>
+            <div class="modal-body" id="question-detail-body">
+                <!-- Populated by JS -->
+            </div>
+            <div class="modal-footer" id="question-detail-footer">
+                <!-- Answer form for leaders/admin -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Reminder Rules Modal -->
+    <div id="reminder-rules-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>⚙️ Cấu hình quy tắc nhắc nhở</h3>
+                <button class="close-btn" onclick="closeModal('reminder-rules-modal')">&times;</button>
+            </div>
+            <div class="modal-body" id="reminder-rules-body">
+                <!-- Populated by JS -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal('reminder-rules-modal')">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Reminder Modal -->
+    <div id="create-reminder-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>➕ Tạo nhắc nhở mới</h3>
+                <button class="close-btn" onclick="closeModal('create-reminder-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="create-reminder-form">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label>Chọn cư dân</label>
+                        <select class="form-control" id="reminder-resident-id" required>
+                            <option value="">-- Chọn cư dân --</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label>Tiêu đề nhắc nhở</label>
+                        <input type="text" class="form-control" id="reminder-title"
+                            placeholder="VD: Nhắc gia hạn tạm trú" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label>Nội dung chi tiết</label>
+                        <textarea class="form-control" id="reminder-message" rows="4" placeholder="Nội dung nhắc nhở..."
+                            required></textarea>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label>Hạn xử lý (tuỳ chọn)</label>
+                        <input type="date" class="form-control" id="reminder-due-date">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal('create-reminder-modal')">Huỷ</button>
+                <button class="btn-primary" onclick="submitCreateReminder()">Tạo nhắc nhở</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=2024123011"></script>
 </body>
 
 </html>

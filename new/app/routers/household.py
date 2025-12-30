@@ -67,6 +67,8 @@ async def list_households(
     search: Optional[str] = None, 
     db: AsyncSession = Depends(get_db)
 ):
+    from sqlalchemy import func as sql_func
+    
     # Build base query
     query = select(Household).where(Household.deleted_at.is_(None))
     if search:
@@ -76,7 +78,6 @@ async def list_households(
         )
     
     # Get total count
-    from sqlalchemy import func as sql_func
     count_query = select(sql_func.count()).select_from(Household).where(Household.deleted_at.is_(None))
     if search:
         count_query = count_query.where(
@@ -96,15 +97,33 @@ async def list_households(
     result = await db.execute(query)
     households = result.scalars().all()
     
+    # Build response with owner_name and resident_count
+    items = []
+    for h in households:
+        # Get owner name
+        owner_name = None
+        if h.owner_id:
+            owner = await db.get(Resident, h.owner_id)
+            if owner:
+                owner_name = owner.full_name
+        
+        # Get resident count
+        count_result = await db.execute(
+            select(sql_func.count()).select_from(Resident).where(Resident.household_id == h.id)
+        )
+        resident_count = count_result.scalar() or 0
+        
+        items.append({
+            "id": h.id,
+            "household_code": h.household_code,
+            "owner_id": h.owner_id,
+            "owner_name": owner_name,
+            "address": h.address,
+            "resident_count": resident_count
+        })
+    
     return {
-        "items": [
-            {
-                "id": h.id,
-                "household_code": h.household_code,
-                "owner_id": h.owner_id,
-                "address": h.address
-            } for h in households
-        ],
+        "items": items,
         "total": total,
         "page": page,
         "pages": total_pages,

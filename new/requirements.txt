@@ -9,3 +9,6 @@ passlib[bcrypt]
 python-multipart
 apscheduler
 jinja2
+cryptography
+bcrypt
+pymysql

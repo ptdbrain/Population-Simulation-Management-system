@@ -22,6 +22,9 @@ class ResidentBase(BaseModel):
     relation_to_owner: str
     status: ResidentStatus = ResidentStatus.PERMANENT
     household_id: Optional[int] = None
+    phone: Optional[str] = None  # Số điện thoại
+    email: Optional[str] = None  # Email
+    occupation: Optional[str] = None  # Nghề nghiệp
 
 class ResidentCreate(ResidentBase):
     pass
@@ -34,6 +37,9 @@ class ResidentUpdate(BaseModel):
     relation_to_owner: Optional[str] = None
     status: Optional[ResidentStatus] = None
     household_id: Optional[int] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    occupation: Optional[str] = None
 
 class ResidentResponse(ResidentBase):
     id: int
@@ -67,10 +73,14 @@ async def list_persons(
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    # Build base query
-    query = select(Resident)
+    from sqlalchemy import func as sql_func, case
+    
+    # Build base query - order by household_id to group residents by household
+    # Use CASE to put NULL household_id at the end (SQLite compatible)
+    null_last_order = case((Resident.household_id.is_(None), 1), else_=0)
+    query = select(Resident).order_by(null_last_order, Resident.household_id.asc(), Resident.id.asc())
     if household_id:
-        query = query.where(Resident.household_id == household_id)
+        query = select(Resident).where(Resident.household_id == household_id).order_by(Resident.id.asc())
     if search:
         query = query.where(
             Resident.full_name.ilike(f"%{search}%") | 
@@ -78,7 +88,6 @@ async def list_persons(
         )
     
     # Get total count
-    from sqlalchemy import func as sql_func
     count_query = select(sql_func.count()).select_from(Resident)
     if household_id:
         count_query = count_query.where(Resident.household_id == household_id)
@@ -100,19 +109,33 @@ async def list_persons(
     result = await db.execute(query)
     persons = result.scalars().all()
     
+    # Build response with household_code
+    items = []
+    for p in persons:
+        # Get household code
+        household_code = None
+        if p.household_id:
+            hh = await db.get(Household, p.household_id)
+            if hh:
+                household_code = hh.household_code
+        
+        items.append({
+            "id": p.id,
+            "full_name": p.full_name,
+            "dob": p.dob.isoformat() if p.dob else None,
+            "gender": p.gender.value if hasattr(p.gender, 'value') else str(p.gender),
+            "cid": p.cid,
+            "relation_to_owner": p.relation_to_owner,
+            "status": p.status.value if hasattr(p.status, 'value') else str(p.status),
+            "household_id": p.household_id,
+            "household_code": household_code,
+            "phone": p.phone,
+            "email": p.email,
+            "occupation": p.occupation
+        })
+    
     return {
-        "items": [
-            {
-                "id": p.id,
-                "full_name": p.full_name,
-                "dob": p.dob.isoformat() if p.dob else None,
-                "gender": p.gender.value if hasattr(p.gender, 'value') else str(p.gender),
-                "cid": p.cid,
-                "relation_to_owner": p.relation_to_owner,
-                "status": p.status.value if hasattr(p.status, 'value') else str(p.status),
-                "household_id": p.household_id
-            } for p in persons
-        ],
+        "items": items,
         "total": total,
         "page": page,
         "pages": total_pages,
@@ -145,3 +168,33 @@ async def update_person(id: int, person_update: ResidentUpdate, db: AsyncSession
     await db.commit()
     await db.refresh(person)
     return person
+
+
+@router.delete("/{id}", dependencies=[Depends(PermissionChecker("person.delete"))])
+async def delete_person(id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Xóa nhân khẩu (soft delete - chuyển status thành MOVED_OUT).
+    Nếu là chủ hộ, cần chuyển chủ hộ trước khi xóa.
+    """
+    person = await db.get(Resident, id)
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    # Check if person is a household owner
+    if person.household_id:
+        hh = await db.get(Household, person.household_id)
+        if hh and hh.owner_id == id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Không thể xóa chủ hộ. Vui lòng chuyển quyền chủ hộ trước."
+            )
+    
+    # Soft delete: set status to MOVED_OUT and remove from household
+    person.status = ResidentStatus.MOVED_OUT
+    person.household_id = None
+    
+    db.add(person)
+    await db.commit()
+    
+    return {"status": "success", "message": "Đã xóa nhân khẩu khỏi hộ khẩu"}
+

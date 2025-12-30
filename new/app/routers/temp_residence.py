@@ -24,6 +24,7 @@ class AbsentRequestCreate(BaseModel):
 class TempResidenceCreate(BaseModel):
     full_name: str
     dob: date
+    gender: str = "MALE"  # MALE or FEMALE
     origin_address: str
     host_household_id: int
     start_date: date
@@ -92,11 +93,12 @@ async def approve_temp_residence(id: int, db: AsyncSession = Depends(get_db), cu
     reg.approved_by = current_user.id
     db.add(reg)
         
-    # Create a Resident record
+    # Create a Resident record - get gender from registration
+    resident_gender = Gender.MALE if reg.gender == "MALE" else Gender.FEMALE
     temp_resident = Resident(
         full_name=reg.full_name,
         dob=reg.dob,
-        gender=Gender.MALE,
+        gender=resident_gender,
         cid=f"TEMP-{id}",
         household_id=reg.host_household_id,
         relation_to_owner="GUEST",

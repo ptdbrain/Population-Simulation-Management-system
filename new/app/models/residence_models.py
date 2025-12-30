@@ -40,6 +40,11 @@ class Resident(Base):
     cid = Column(String(12), unique=True, index=True) # CCCD
     relation_to_owner = Column(String(50)) # HEAD, WIFE, SON...
     status = Column(Enum(ResidentStatus), default=ResidentStatus.PERMANENT)
+    
+    # Contact & Job Information
+    phone = Column(String(15), nullable=True)  # Số điện thoại
+    email = Column(String(100), nullable=True)  # Email
+    occupation = Column(String(100), nullable=True)  # Nghề nghiệp / Công việc
 
     household = relationship("Household", foreign_keys=[household_id], back_populates="residents")
 
